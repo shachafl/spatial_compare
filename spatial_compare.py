@@ -4,6 +4,8 @@ import inspect
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
+import scanpy as sc
+
 
 def find_matched_groups(df0,df1,data_names=["data 0", "data 1"],
                         category="subclass",
@@ -172,3 +174,160 @@ def spatial_compare(ad_0:ad.AnnData, ad_1:ad.AnnData,
                       )
     match_results["expression_results"] = expression_results
     return match_results
+
+
+
+# function to run 3 rounds of Leiden clustering to an anndata object
+
+def filter_and_cluster(input_ad, n_hvgs=2000, 
+                       min_max_counts=3,min_cell_area=300,
+                       min_transcript_counts=50,
+                       n_pcs=[50,20,10],
+                       n_iterations=[5,5,5]):
+    
+    low_detection_genes = input_ad.var.iloc[np.nonzero(np.max(input_ad.X, axis = 0)<=min_max_counts)].gene
+    
+    low_detection_genes
+    
+    # plt.figure(figsize=[20,20])
+    # sns.pairplot(input_ad.obs.loc[np.logical_and(input_ad.obs.cell_area<min_cell_area,
+    #                                                input_ad.obs.transcript_counts<min_transcript_counts),["transcript_counts", "cell_area","segmentation_method"]],
+    #              hue="segmentation_method", markers='.')
+    
+    # throw out genes if no cells have more than 3 counts
+    # and cells with less than 100 total counts (5k panel). 50 counts for 300 gene panel)
+    # Normalizing to median total counts
+    to_cluster = input_ad[input_ad.obs.transcript_counts>=min_transcript_counts,np.logical_not(input_ad.var.gene.isin(low_detection_genes))].copy()
+    sc.pp.normalize_total(to_cluster)
+    # Logarithmize the data
+    sc.pp.log1p(to_cluster)
+    
+    sc.pp.highly_variable_genes(to_cluster, n_top_genes=n_hvgs)
+    
+    sc.tl.pca(to_cluster,n_comps=n_pcs[0])
+    
+    sc.pp.neighbors(to_cluster)
+    
+    sc.tl.umap(to_cluster)
+    
+    sc.pl.pca_variance_ratio(to_cluster, n_pcs[0], log=True)
+    
+    sc.pl.umap(
+        to_cluster,
+        color="subclass_name",
+        # Setting a smaller point size to get prevent overlap
+        size=2,
+    )
+
+
+    sc.tl.leiden(to_cluster, n_iterations=n_iterations[0])
+
+    sc.pl.umap(to_cluster, color=["leiden","subclass_name"])
+    
+    # per cluster, repeat PCA and clustering...
+    all_subs=[]
+    for cl in to_cluster.obs.leiden.unique():
+        print(cl)
+        subcopy = to_cluster[to_cluster.obs.leiden==cl,:].copy()
+        subcopy.obs.drop(columns=["leiden"], inplace=True)
+        sc.tl.pca(subcopy,n_comps=n_pcs[1])    
+        sc.pp.neighbors(subcopy)
+        sc.tl.leiden(subcopy, n_iterations=n_iterations[1])
+        sc.pl.umap(subcopy, color=["leiden","subclass_name", "supertype_name"])
+        subcopy.obs["iterative_leiden"]=[cl+"_"+g for g in subcopy.obs.leiden]
+        all_subs.append(subcopy)
+    
+    iterative_clusters_ad = ad.concat(all_subs)
+    
+    
+    # one more round of clustering...
+    # 
+    all_subs=[]
+    for cl in iterative_clusters_ad.obs.iterative_leiden.unique():
+        subcopy = iterative_clusters_ad[iterative_clusters_ad.obs.iterative_leiden==cl,:].copy()
+        subcopy.obs.drop(columns=["leiden"], inplace=True)
+        sc.tl.pca(subcopy,n_comps=n_pcs[2])    
+        sc.pp.neighbors(subcopy)
+        sc.tl.leiden(subcopy, n_iterations=n_iterations[2])
+        #sc.pl.umap(subcopy, color=["leiden","subclass_name", "supertype_name"])
+        subcopy.obs["iterative_leiden_2"]=[cl+"_"+g for g in subcopy.obs.leiden]
+        all_subs.append(subcopy)
+    
+    iterative_clusters_ad = ad.concat(all_subs)
+    return iterative_clusters_ad
+
+
+
+
+
+
+def generate_label_confusion(input_ad,
+                             column_pairs=[["iterative_subclass","subclass_name"],
+                                           ["iterative_leiden","supertype_name"],
+                                           ["iterative_leiden","subclass_name"]]):
+    
+    
+    #TODO make this function iterate over user-defined column pairs instead of repeating code
+    #subclass confusion
+    subclass_row_dfs = []
+    for g in input_ad.obs[column_pairs[0][0]].unique():
+        g_df = input_ad.obs.loc[input_ad.obs[column_pairs[0][0]]==g,column_pairs[0]].groupby(column_pairs[0][1],observed=False).count()
+        g_df.rename(columns={column_pairs[0][0]:column_pairs[0][0]+"_"+g},inplace=True)
+        subclass_row_dfs.append(g_df)
+    tdf = pd.concat(subclass_row_dfs, axis=1)
+    tdf_norm = tdf.copy().astype(float)
+    for ii in tdf_norm.index:
+        tdf_norm.loc[ii,:] = tdf_norm.loc[ii,:]/tdf_norm.loc[ii,:].sum()
+    
+    
+    #supertype confusion
+    supertype_row_dfs = []
+    for g in input_ad.obs[column_pairs[1][0]].unique():
+        g_df = input_ad.obs.loc[input_ad.obs[column_pairs[1][0]]==g,column_pairs[1]].groupby(column_pairs[1][1],observed=False).count()
+        g_df.rename(columns={column_pairs[1][0]:column_pairs[1][0]+"_"+g},inplace=True)
+        supertype_row_dfs.append(g_df)
+    
+    tdf2 = pd.concat(supertype_row_dfs, axis=1)
+    tdf2_norm = tdf2.copy().astype(float)
+    for ii in tdf2_norm.index:
+        tdf2_norm.loc[ii,:] = tdf2_norm.loc[ii,:]/tdf2_norm.loc[ii,:].sum()
+    
+    
+    
+    #supertype subclass confusion
+    supertype_subclass_row_dfs = []
+    for g in input_ad.obs[column_pairs[2][0]].unique():
+        g_df = input_ad.obs.loc[input_ad.obs[column_pairs[2][0]]==g,column_pairs[2]].groupby(column_pairs[2][1],observed=False).count()
+        g_df.rename(columns={column_pairs[2][0]:column_pairs[2][0]+"_"+g},inplace=True)
+        supertype_subclass_row_dfs.append(g_df)
+    
+    tdf3 = pd.concat(supertype_subclass_row_dfs, axis=1)
+    tdf3_norm = tdf3.copy().astype(float)
+    for ii in tdf3_norm.index:
+        tdf3_norm.loc[ii,:] = tdf3_norm.loc[ii,:]/tdf3_norm.loc[ii,:].sum()
+
+    return {"subclass_confusion":tdf_norm,
+            "supertype_confusion":tdf2_norm,
+            "subclass_iterative_supertype_confusion":tdf3_norm}
+
+
+
+
+def get_column_ordering(df, ordered_rows):
+
+    # function to get sorted columns matched to input ordered rows
+    # runs through each entry in `ordered_rows` and adds first non-repeated column from the ranked list to that category
+    # repeats until all the columns are done
+    # ranking is based on the values in the array, in this case it is the fraction of cells that mapped to each input row
+    flat_ordering = []
+    empty_columns={r:[] for r in ordered_rows}
+    while len(flat_ordering)<df.shape[1]:
+        for r in ordered_rows:
+            r_columns =[df.columns[rr] for rr in df.loc[r,:].argsort()[::-1] if  not (df.columns[rr] in flat_ordering)]
+            if len(r_columns)>0 and len(flat_ordering)<df.shape[1]:
+                empty_columns[r].append(r_columns[0])
+                flat_ordering.append(r_columns[0])
+                
+    output=[]
+    [output.extend(empty_columns[k]) for k in empty_columns]
+    return output
