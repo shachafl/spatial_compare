@@ -1,13 +1,18 @@
-import anndata
 import anndata as ad
 import inspect
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
 import scanpy as sc
+import seaborn as sns
+
+from matplotlib.ticker import FormatStrFormatter
 
 
-def find_matched_groups(df0,df1,data_names=["data 0", "data 1"],
+
+DEFAULT_DATA_NAMES=["Data 0", "Data 1"]
+
+def find_matched_groups(df0,df1,data_names=DEFAULT_DATA_NAMES,
                         category="subclass",
                         n_top_groups=100, 
                         n_shared_groups=30,
@@ -40,11 +45,9 @@ def find_matched_groups(df0,df1,data_names=["data 0", "data 1"],
                 if len(g)>50:
                     continue
                 plt.text(in_top_N_0.loc[g,:][_other_columns[0]],in_top_N_1.loc[g,:][_other_columns[1]], g)
-            plt.text(np.mean(in_top_N_0.loc[shared_top,:][_other_columns[0]])*.5,
-                     np.mean(in_top_N_1.loc[shared_top,:][_other_columns[1]])*1.5, "correlation = "+str(prop_corr)[:6])
             plt.xlabel(data_names[0])
             plt.ylabel(data_names[1])
-            plt.title("cell type abundances")
+            plt.title("cell type abundances\n correlation = "+str(prop_corr)[:6])
             plt.plot([np.min(in_top_N_0.loc[shared_top,:][_other_columns[0]]),np.max(in_top_N_0.loc[shared_top,:][_other_columns[0]])],
                      [np.min(in_top_N_0.loc[shared_top,:][_other_columns[0]]),np.max(in_top_N_0.loc[shared_top,:][_other_columns[0]])],'--')
                      
@@ -56,7 +59,7 @@ def find_matched_groups(df0,df1,data_names=["data 0", "data 1"],
            "n1":in_top_N_1}
             
 
-def compare_expression(ad_0,ad_1,data_names=["data 0", "data 1"],
+def compare_expression(ad_0,ad_1,data_names=DEFAULT_DATA_NAMES,
                        category="cluster_name",
                        category_values=[], plot_stuff=False,
                       min_mean_expression=2,
@@ -102,7 +105,7 @@ def compare_expression(ad_0,ad_1,data_names=["data 0", "data 1"],
                                 "total_count_ratio": np.sum(ad_1[group_mask_1, shared_genes].X)/np.sum(ad_0[group_mask_0, shared_genes].X)
                                 })
         
-        gene_ratio_dfs[category_value] = pd.DataFrame(means_1/means_0,columns=["data1_data0_ratio"], index = shared_genes)
+        gene_ratio_dfs[category_value] = pd.DataFrame(means_1/means_0,columns=[data_names[1]+" / "+data_names[0]+" ratio"], index = shared_genes)
         
         if plot_stuff:
             plt.figure(figsize=[10,10])
@@ -125,41 +128,46 @@ def compare_expression(ad_0,ad_1,data_names=["data 0", "data 1"],
                      [np.min(means_0), np.max(means_0)],'--')
     gene_ratio_df = pd.concat(gene_ratio_dfs,axis=1)
     
-    return {"category_results":pd.DataFrame.from_records(category_records),
+    return {"data_names":data_names,
+            "category_results":pd.DataFrame.from_records(category_records),
             "gene_ratio_dataframe":gene_ratio_df}
 
 
 
 def spatial_compare(ad_0:ad.AnnData, ad_1:ad.AnnData,
                     spatial_plot=False,obsm_key="spatial_cirro_grid", 
-                    plot_legend=True,min_cells_to_plot = 10, **kwargs):
+                    plot_legend=True,min_cells_to_plot = 10, decimate_for_spatial_plot=1, **kwargs):
 
     fmr_kwargs = {key:kwargs[key] for key in inspect.signature(find_matched_groups).parameters.keys() if key in kwargs.keys()}
     ce_kwargs = {key:kwargs[key] for key in inspect.signature(compare_expression).parameters.keys()if key in kwargs.keys()}
 
     if spatial_plot:
-        decimate_for_plot = 1
+        if obsm_key not in ad_0.obsm.keys() or obsm_key not in ad_1.obsm.keys():
+            raise ValueError("spatial_plot is True, but the obsm key "+obsm_key+" is not in both input AnnData objects")    
+        
         plt.figure(figsize=[20,10])
         all_category_values = set(ad_0.obs[fmr_kwargs["category"]].unique()) | set(ad_1.obs[fmr_kwargs["category"]].unique()) 
         for c in all_category_values:
             plt.subplot(1,2,1)
+            plt.title(ce_kwargs["data_names"][0])
             if np.sum(ad_0.obs[fmr_kwargs["category"]]==c)>min_cells_to_plot:
                 label = c+": "+str(np.sum(ad_0.obs[fmr_kwargs["category"]]==c))
             else:
                 label = None
-            plt.plot(ad_0.obsm[obsm_key][ad_0.obs[fmr_kwargs["category"]]==c,0][::decimate_for_plot], 
-                 ad_0.obsm[obsm_key][ad_0.obs[fmr_kwargs["category"]]==c,1][::decimate_for_plot],'.',
+            plt.plot(ad_0.obsm[obsm_key][ad_0.obs[fmr_kwargs["category"]]==c,0][::decimate_for_spatial_plot], 
+                 ad_0.obsm[obsm_key][ad_0.obs[fmr_kwargs["category"]]==c,1][::decimate_for_spatial_plot],'.',
                      label = label, markersize=.5)
             plt.axis('equal')
             if plot_legend:
                 plt.legend()
             plt.subplot(1,2,2)
+            plt.title(ce_kwargs["data_names"][1])
             if np.sum(ad_1.obs[fmr_kwargs["category"]]==c)>min_cells_to_plot:
                 label = c+": "+str(np.sum(ad_1.obs[fmr_kwargs["category"]]==c))
             else:
                 label = None
-            plt.plot(ad_1.obsm[obsm_key][ad_1.obs[fmr_kwargs["category"]]==c,0][::decimate_for_plot], 
-                 ad_1.obsm[obsm_key][ad_1.obs[fmr_kwargs["category"]]==c,1][::decimate_for_plot],'.',
+            plt.plot(ad_1.obsm[obsm_key][ad_1.obs[fmr_kwargs["category"]]==c,0][::decimate_for_spatial_plot], 
+                 ad_1.obsm[obsm_key][ad_1.obs[fmr_kwargs["category"]]==c,1][::decimate_for_spatial_plot],'.',
                      label = label, markersize=.5)
             plt.axis('equal')
             if plot_legend:
@@ -177,27 +185,28 @@ def spatial_compare(ad_0:ad.AnnData, ad_1:ad.AnnData,
 
 
 
-# function to run 3 rounds of Leiden clustering to an anndata object
 
-def filter_and_cluster(input_ad, n_hvgs=2000, 
+def filter_and_cluster_twice(input_ad, n_hvgs=2000, 
                        min_max_counts=3,min_cell_area=300,
                        min_transcript_counts=50,
-                       n_pcs=[50,20,10],
-                       n_iterations=[5,5,5]):
+                       n_pcs=[50,20],
+                       n_iterations=[5,5], plot_stuff=True):
+    """ 
+    filter genes and cells, then run 2 rounds of Leiden clustering on an anndata object 
+    resulting clusters are named "leiden_XX_YY" where "XX" and "YY" are the numbers of the first and second
+    round clusters
     
-    low_detection_genes = input_ad.var.iloc[np.nonzero(np.max(input_ad.X, axis = 0)<=min_max_counts)].gene
-    
-    low_detection_genes
-    
-    # plt.figure(figsize=[20,20])
-    # sns.pairplot(input_ad.obs.loc[np.logical_and(input_ad.obs.cell_area<min_cell_area,
-    #                                                input_ad.obs.transcript_counts<min_transcript_counts),["transcript_counts", "cell_area","segmentation_method"]],
-    #              hue="segmentation_method", markers='.')
-    
+    this function returns a copy of the anndata object
+    """
+    if "gene" in input_ad.var.columns:
+        low_detection_genes = input_ad.var.iloc[np.nonzero(np.max(input_ad.X, axis = 0)<=min_max_counts)].gene
+    else:
+        low_detection_genes = input_ad.var.iloc[np.nonzero(np.max(input_ad.X, axis = 0)<=min_max_counts)].index
+
     # throw out genes if no cells have more than 3 counts
-    # and cells with less than 100 total counts (5k panel). 50 counts for 300 gene panel)
-    # Normalizing to median total counts
     to_cluster = input_ad[input_ad.obs.transcript_counts>=min_transcript_counts,np.logical_not(input_ad.var.gene.isin(low_detection_genes))].copy()
+    # Normalizing to median total counts
+
     sc.pp.normalize_total(to_cluster)
     # Logarithmize the data
     sc.pp.log1p(to_cluster)
@@ -209,108 +218,182 @@ def filter_and_cluster(input_ad, n_hvgs=2000,
     sc.pp.neighbors(to_cluster)
     
     sc.tl.umap(to_cluster)
+    if plot_stuff:
+        sc.pl.pca_variance_ratio(to_cluster, n_pcs[0], log=True)
     
-    sc.pl.pca_variance_ratio(to_cluster, n_pcs[0], log=True)
-    
-    sc.pl.umap(
-        to_cluster,
-        color="subclass_name",
-        # Setting a smaller point size to get prevent overlap
-        size=2,
-    )
+        sc.pl.umap(
+            to_cluster,
+            # Setting a smaller point size to get prevent overlap
+            size=2,
+        )
 
 
     sc.tl.leiden(to_cluster, n_iterations=n_iterations[0])
-
-    sc.pl.umap(to_cluster, color=["leiden","subclass_name"])
+    to_cluster.obs.rename(columns={"leiden":"leiden_0"},inplace=True)
+    
+    if plot_stuff:
+        sc.pl.umap(to_cluster, color=["leiden_0"],size=2)
     
     # per cluster, repeat PCA and clustering...
     all_subs=[]
-    for cl in to_cluster.obs.leiden.unique():
-        print(cl)
-        subcopy = to_cluster[to_cluster.obs.leiden==cl,:].copy()
-        subcopy.obs.drop(columns=["leiden"], inplace=True)
+    for cl in to_cluster.obs.leiden_0.unique():
+        subcopy = to_cluster[to_cluster.obs.leiden_0==cl,:].copy()
         sc.tl.pca(subcopy,n_comps=n_pcs[1])    
         sc.pp.neighbors(subcopy)
         sc.tl.leiden(subcopy, n_iterations=n_iterations[1])
-        sc.pl.umap(subcopy, color=["leiden","subclass_name", "supertype_name"])
-        subcopy.obs["iterative_leiden"]=[cl+"_"+g for g in subcopy.obs.leiden]
+        if plot_stuff:
+            sc.pl.umap(subcopy, color=["leiden_0"])
+        subcopy.obs["leiden_1"]=["leiden_"+str(cl).zfill(2)+"_"+str(g).zfill(2) for g in subcopy.obs.leiden]
+        
         all_subs.append(subcopy)
     
     iterative_clusters_ad = ad.concat(all_subs)
-    
-    
-    # one more round of clustering...
-    # 
-    all_subs=[]
-    for cl in iterative_clusters_ad.obs.iterative_leiden.unique():
-        subcopy = iterative_clusters_ad[iterative_clusters_ad.obs.iterative_leiden==cl,:].copy()
-        subcopy.obs.drop(columns=["leiden"], inplace=True)
-        sc.tl.pca(subcopy,n_comps=n_pcs[2])    
-        sc.pp.neighbors(subcopy)
-        sc.tl.leiden(subcopy, n_iterations=n_iterations[2])
-        #sc.pl.umap(subcopy, color=["leiden","subclass_name", "supertype_name"])
-        subcopy.obs["iterative_leiden_2"]=[cl+"_"+g for g in subcopy.obs.leiden]
-        all_subs.append(subcopy)
-    
-    iterative_clusters_ad = ad.concat(all_subs)
+
     return iterative_clusters_ad
 
 
 
+def detection_ratio_plots(gene_ratio_df, data_names=DEFAULT_DATA_NAMES, figsize=[15,15]):
+    
+    sorted_genes=[str(s) for s in gene_ratio_df.mean(axis=1).sort_values().index.values]
+    
+    
+    plt.figure(figsize=figsize)
+    plt.subplot(3,1,1)
+    p = sns.boxplot(gene_ratio_df.loc[sorted_genes,:].T, )
+    p.set_yscale('log')
+    p.set_xlabel("gene",fontsize=20)
+    p.set_ylabel("detection ratio\n"+data_names[1]+" / "+data_names[0],fontsize=20)
+    ax=plt.gca()
+    ax.tick_params(axis='x',labelrotation=45, labelsize=10)
+    ax.tick_params(axis='y',labelsize=20, which="major")
+    ax.tick_params(axis='y',labelsize=10, which="minor")
+
+    ax.yaxis.set_minor_formatter(FormatStrFormatter("%.1f"))
+    plt.plot(ax.get_xlim(), [1,1],'-')
+        
 
 
+    plt.subplot(3,1,2)
+    ax =sns.boxplot(gene_ratio_df)
+    plt.ylabel("transcript detection ratio "+data_names[1]+" / "+data_names[0])
+    ax.set_xticks(ax.get_xticks(), ax.get_xticklabels(), rotation=45, ha='right')
+    plt.plot(ax.get_xlim(), [1,1])
 
+    plt.subplot(3,1,3)
+    h = plt.hist(np.log10(gene_ratio_df.values.ravel()), bins =100)
+    median_ratio = np.nanmedian(gene_ratio_df.values.ravel())
+    mean_ratio = np.nanmean(gene_ratio_df.values.ravel())
+    plt.plot(np.log10(median_ratio)*np.ones([2]),[0,1.1*h[0].max()], label = "median ratio "+data_names[1]+" / "+data_names[0]+" : "+str(median_ratio )[:5])
+    plt.plot(np.log10(mean_ratio)*np.ones([2]),[0,1.1*h[0].max()], label = "mean ratio "+data_names[1]+" / "+data_names[0]+" : "+str(mean_ratio )[:5])
+    plt.legend()
+    plt.title("ratio of cell segmented counts for shared genes\n "+data_names[1]+" / "+data_names[0], fontsize=20)
+    plt.xlabel("log10(counts ratio)",fontsize=20)
+    ax=plt.gca()
+    ax.tick_params(axis='y',labelsize=12)
+    plt.tight_layout()
+    
 def generate_label_confusion(input_ad,
                              column_pairs=[["iterative_subclass","subclass_name"],
                                            ["iterative_leiden","supertype_name"],
                                            ["iterative_leiden","subclass_name"]]):
     
-    
-    #TODO make this function iterate over user-defined column pairs instead of repeating code
-    #subclass confusion
-    subclass_row_dfs = []
-    for g in input_ad.obs[column_pairs[0][0]].unique():
-        g_df = input_ad.obs.loc[input_ad.obs[column_pairs[0][0]]==g,column_pairs[0]].groupby(column_pairs[0][1],observed=False).count()
-        g_df.rename(columns={column_pairs[0][0]:column_pairs[0][0]+"_"+g},inplace=True)
-        subclass_row_dfs.append(g_df)
-    tdf = pd.concat(subclass_row_dfs, axis=1)
-    tdf_norm = tdf.copy().astype(float)
-    for ii in tdf_norm.index:
-        tdf_norm.loc[ii,:] = tdf_norm.loc[ii,:]/tdf_norm.loc[ii,:].sum()
+    # identifies fraction correctly matching labels in pairs of columns supplied by user in `column_pairs`
     
     
-    #supertype confusion
-    supertype_row_dfs = []
-    for g in input_ad.obs[column_pairs[1][0]].unique():
-        g_df = input_ad.obs.loc[input_ad.obs[column_pairs[1][0]]==g,column_pairs[1]].groupby(column_pairs[1][1],observed=False).count()
-        g_df.rename(columns={column_pairs[1][0]:column_pairs[1][0]+"_"+g},inplace=True)
-        supertype_row_dfs.append(g_df)
-    
-    tdf2 = pd.concat(supertype_row_dfs, axis=1)
-    tdf2_norm = tdf2.copy().astype(float)
-    for ii in tdf2_norm.index:
-        tdf2_norm.loc[ii,:] = tdf2_norm.loc[ii,:]/tdf2_norm.loc[ii,:].sum()
-    
-    
-    
-    #supertype subclass confusion
-    supertype_subclass_row_dfs = []
-    for g in input_ad.obs[column_pairs[2][0]].unique():
-        g_df = input_ad.obs.loc[input_ad.obs[column_pairs[2][0]]==g,column_pairs[2]].groupby(column_pairs[2][1],observed=False).count()
-        g_df.rename(columns={column_pairs[2][0]:column_pairs[2][0]+"_"+g},inplace=True)
-        supertype_subclass_row_dfs.append(g_df)
-    
-    tdf3 = pd.concat(supertype_subclass_row_dfs, axis=1)
-    tdf3_norm = tdf3.copy().astype(float)
-    for ii in tdf3_norm.index:
-        tdf3_norm.loc[ii,:] = tdf3_norm.loc[ii,:]/tdf3_norm.loc[ii,:].sum()
+    column_pair_results = []
+    for column_pair in column_pairs:
+        row_dfs = []
+        for g in input_ad.obs[column_pairs[0][0]].unique():
+            g_df = input_ad.obs.loc[input_ad.obs[column_pairs[0][0]]==g,column_pairs[0]].groupby(column_pairs[0][1],observed=False).count()
+            g_df.rename(columns={column_pairs[0][0]:column_pairs[0][0]+"_"+g},inplace=True)
+            row_dfs.append(g_df)
+        tdf = pd.concat(row_dfs, axis=1)
+        tdf_norm = tdf.copy().astype(float)
+        for ii in tdf_norm.index:
+            tdf_norm.loc[ii,:] = tdf_norm.loc[ii,:]/tdf_norm.loc[ii,:].sum()
+        
+        column_pair_results.append(tdf_norm)
+        
+    return {c_p[0]+"_"+c_p[1]:column_pair_results[ii] for ii, c_p in enumerate(column_pairs)}
 
-    return {"subclass_confusion":tdf_norm,
-            "supertype_confusion":tdf2_norm,
-            "subclass_iterative_supertype_confusion":tdf3_norm}
+def find_best_match_groups(ad0,ad1,group_names=["leiden_0","leiden_0"], in_place=True):
+
+    g_o_m_0 = grouped_obs_mean(ad0, group_names[0])
+    g_o_m_1 = grouped_obs_mean(ad1, group_names[1])
+    
+    # these can have different numbers of clusters and different sets of observed genes. 
+    # subset to shared genes for this and deal with non-square correlation matrix
+    
+    shared_genes = list(g_o_m_0.loc[g_o_m_0.index.isin(g_o_m_1.index),:].index)
+    correlation_array = np.corrcoef(pd.concat([g_o_m_0.loc[shared_genes,:], g_o_m_1.loc[shared_genes,:]], axis=1),rowvar=0)
+    shape0 = g_o_m_0.loc[shared_genes,:].shape
+    shape1 = g_o_m_1.loc[shared_genes,:].shape
+    array_01= correlation_array[:shape0[1],shape0[1]:]
+    array_10= array_01.T
+    
+    match_01={r:np.argmax(array_01[r,:]) for r in range(array_01.shape[0])}
+    match_10={r:np.argmax(array_10[r,:]) for r in range(array_10.shape[0])}
+    
+    # find mutual matches:
+    mutual_matches={}
+    for k in match_01:
+        if match_10[match_01[k]] == k:
+            mutual_matches.update({k:match_01[k]})
+    
+    
+    INPUT_CLUSTER_NAME = "leiden_0"
 
 
+    if in_place:
+        ad0.obs["matched_"+group_names[0]] = ""
+        ad1.obs["matched_"+group_names[0]] = ""
+    
+        for mm in mutual_matches:
+            
+            match_mask0 = ad0.obs[INPUT_CLUSTER_NAME]==g_o_m_0.columns[mm]
+            ad0.obs.loc[match_mask0,["matched_leiden_clusters"] ] = "matched_leiden_cluster_"+str(mm)
+        
+            match_mask1 = ad1.obs[INPUT_CLUSTER_NAME]==g_o_m_1.columns[mutual_matches[mm]]
+            ad1.obs.loc[match_mask1,["matched_leiden_clusters"] ] = "matched_leiden_cluster_"+str(mm)
+    else:
+        ad0_out = ad0.copy()
+        ad1_out = ad1.copy()
+        
+        ad0_out.obs["matched_"+group_names[0]] = ""
+        ad1_out.obs["matched_"+group_names[0]] = ""
+    
+        for mm in mutual_matches:
+            
+            match_mask0 = ad0_out.obs[INPUT_CLUSTER_NAME]==g_o_m_0.columns[mm]
+            ad0_out.obs.loc[match_mask0,["matched_"+group_names[0]] ] = "matched_leiden_cluster_"+str(mm)
+        
+            match_mask1 = ad1_out.obs[INPUT_CLUSTER_NAME]==g_o_m_1.columns[mutual_matches[mm]]
+            ad1_out.obs.loc[match_mask1,["matched_"+group_names[0]] ] = "matched_leiden_cluster_"+str(mm)
+        return (ad0,ad1)
+
+def grouped_obs_mean(adata, group_key, layer=None, gene_symbols=None):
+    if layer is not None:
+        getX = lambda x: x.layers[layer]
+    else:
+        getX = lambda x: x.X
+    if gene_symbols is not None:
+        new_idx = adata.var[idx]
+    else:
+        new_idx = adata.var_names
+
+    grouped = adata.obs.groupby(group_key)
+    out = pd.DataFrame(
+        np.zeros((adata.shape[1], len(grouped)), dtype=np.float64),
+        columns=list(grouped.groups.keys()),
+        index=adata.var_names
+    )
+
+    for group, idx in grouped.indices.items():
+        X = getX(adata[idx])
+        out[group] = np.ravel(X.mean(axis=0, dtype=np.float64)).tolist()    
+        
+    return out
 
 
 def get_column_ordering(df, ordered_rows):
@@ -331,3 +414,5 @@ def get_column_ordering(df, ordered_rows):
     output=[]
     [output.extend(empty_columns[k]) for k in empty_columns]
     return output
+
+
