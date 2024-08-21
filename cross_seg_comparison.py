@@ -43,7 +43,7 @@ def create_seg_comp_df(barcode, seg_name, base_path, min_transcripts):
     return seg_df
 
 
-def get_segmentation_data(barcode, seg_name_a, seg_name_b, seg_a_path, seg_b_path, save, reuse_saved=True, min_transcripts=40):
+def get_segmentation_data(barcode, seg_name_a, seg_name_b, seg_a_path, seg_b_path, save, savepath, reuse_saved=True, min_transcripts=40):
     """
     Loads or calls function to collect segmentation data
     Inputs:
@@ -57,7 +57,7 @@ def get_segmentation_data(barcode, seg_name_a, seg_name_b, seg_a_path, seg_b_pat
         seg_comp_df: dataframe describing cell spatial locations (x and y), segmentation identifier, low quality cell identifier, with unique index
     """
     
-    filepath = seg_b_path+barcode+'_seg_comp_df_'+seg_name_a+'_and_'+seg_name_b+'.csv'
+    filepath = savepath+barcode+'_seg_comp_df_'+seg_name_a+'_and_'+seg_name_b+'.csv'
     if Path(filepath).exists() and reuse_saved: 
         seg_comp_df = pd.read_csv(filepath, index_col=0)
     else:
@@ -66,6 +66,48 @@ def get_segmentation_data(barcode, seg_name_a, seg_name_b, seg_a_path, seg_b_pat
         seg_comp_df = pd.concat([seg_a_df, seg_b_df], axis=0)
     if save:
         seg_comp_df.to_csv(filepath)
+    return seg_comp_df
+
+def get_segmentation_data(barcode, seg_name_a, seg_name_b, anndata_a, anndata_b, save, savepath, reuse_saved, min_transcripts):
+    """
+    Loads segmentation data from anndata object
+    Inputs:
+        Barcode: unique section identifier, string
+        seg_name_a, seg_name_b: names of segmentations to be compared, string
+        anndata_path_a, anndata_path_b: path to segmented anndata objects, string
+        save: whether to save the intermediary dataframe (useful if running functions individually), bool
+        savepath: path to which data should be saved. Defaults to seg_b_path if not specified.
+        min_transcripts: minimum number of transcripts needed to define a cell too low quality to be considered for mapping
+    RETURNS
+        seg_comp_df: dataframe describing cell spatial locations (x and y), segmentation identifier, low quality cell identifier, with unique index
+    """
+    savepath = savepath+barcode+'_seg_comp_df_'+seg_name_a+'_and_'+seg_name_b+'.csv'
+    if Path(savepath).exists() and reuse_saved: 
+        seg_comp_df = pd.read_csv(savepath, index_col=0)
+    else:
+        seg_dfs = []
+        for i in range(2):
+            if i == 0:
+                seg_h5ad = anndata_a
+                name = seg_name_a
+            else:
+                seg_h5ad = anndata_b
+                name = seg_name_b
+            #sum across .X to get sum transcripts/cell > 40
+            high_quality_cells = [idx for idx, x in enumerate(seg_h5ad.X.sum(axis=1)) if x >= min_transcripts]
+            seg_h5ad.obs['low_quality_cells'] = [True]*len(seg_h5ad.obs)
+            seg_h5ad.obs.iloc[high_quality_cells, -1] = False
+            seg_h5ad.obs.loc[:, 'source'] = name
+            #save only necessary columns
+            if 'center_x' not in seg_h5ad.obs.columns.tolist():
+                seg_h5ad.obs['center_x'] = seg_h5ad.obsm['spatial'][:,0]
+                seg_h5ad.obs['center_y'] = seg_h5ad.obsm['spatial'][:,1]
+            seg_df = seg_h5ad.obs[['center_x', 'center_y', 'source', 'low_quality_cells']]
+            seg_dfs.append(seg_df)
+        seg_comp_df = pd.concat(seg_dfs, axis=0)
+        seg_comp_df.index = seg_comp_df.index.astype(str)
+    if save:
+        seg_comp_df.to_csv(savepath)
     return seg_comp_df
 
 
@@ -105,7 +147,8 @@ def get_mutual_matches(dfa, dfb, nn_dist):
 
 def collect_mutual_match_and_doublets(barcode, seg_name_a ='VPT', seg_name_b ='SIS', save = True, nn_dist = 2.5, reuse_saved= True,
                                    seg_a_path = '//allen/programs/celltypes/workgroups/hct/emilyg/manuscript_23_completed_files/resegd_nas05_files/',
-                                   seg_b_path='/allen/programs/celltypes/workgroups/hct/emilyg/reseg_project/new_seg/'):
+                                   seg_b_path='/allen/programs/celltypes/workgroups/hct/emilyg/reseg_project/new_seg/', 
+                                   anndata_a=None, anndata_b=None, savepath=None, min_transcripts=40):
     """
     Runs all relevant functions in required order, generating dataframe summarizing comparisons between two segmentations for a single section.
     INPUTS
@@ -114,12 +157,21 @@ def collect_mutual_match_and_doublets(barcode, seg_name_a ='VPT', seg_name_b ='S
         save: whether to save the intermediate and final results. Bool, default true
         nn_dist: distance cutoff for identifying likely same cell between segmentations. float, default 2.5 (um)
         seg_a_path, seg_b_path: path to segmentation results, string
+        anndata_a, anndata_b: spatial_compare anndata objects to use instead of raw segmentation results
+        min_transcripts: minimum number of transcripts needed to define a cell too low quality to be considered for mapping
+        savepath: path to which you'd like to save your results. Required if using anndata objects and save = True, otherwise defaults to seg_b_path
     OUTPUTS:
         seg_comp_df: dataframe with unique index describing cell spatial locations (x and y), segmentation identifier, low quality cell identifier, mutual matches, and putative doublets. 
     """
     
+    if not savepath:
+        savepath=seg_b_path
     #grab base comparison df
-    seg_comp_df = get_segmentation_data(barcode, seg_name_a, seg_name_b, seg_a_path, seg_b_path, save=save, reuse_saved=reuse_saved) 
+    if anndata_a is not None:
+        seg_comp_df = get_segmentation_data(barcode, seg_name_a, seg_name_b, anndata_a, anndata_b, save, savepath, reuse_saved, min_transcripts)
+    else:
+        seg_comp_df = get_segmentation_data(barcode, seg_name_a, seg_name_b, seg_a_path, seg_b_path, save, reuse_saved, min_transcripts) 
+    
     #mutual matches with both segmentations filtered
     dfa = seg_comp_df[(seg_comp_df['source']==seg_name_a)&(seg_comp_df['low_quality_cells']==False)]
     dfb = seg_comp_df[(seg_comp_df['source']==seg_name_b)&(seg_comp_df['low_quality_cells']==False)]
@@ -146,8 +198,8 @@ def collect_mutual_match_and_doublets(barcode, seg_name_a ='VPT', seg_name_b ='S
 
     #save results
     if save:
-        seg_comp_df.to_csv(seg_b_path+barcode+'_seg_comp_df_'+seg_name_a+'_and_'+seg_name_b+'_populated.csv', index= True)
-        print('Saved to: '+seg_b_path+barcode+'_seg_comp_df_'+seg_name_a+'_and_'+seg_name_b+'_populated.csv')
+        seg_comp_df.to_csv(savepath+barcode+'_seg_comp_df_'+seg_name_a+'_and_'+seg_name_b+'_populated.csv', index= True)
+        print('Saved to: '+savepath+barcode+'_seg_comp_df_'+seg_name_a+'_and_'+seg_name_b+'_populated.csv')
     return seg_comp_df
 
 
@@ -165,7 +217,8 @@ def create_node_df_sankey(seg_comp_df, barcode, save=True, savepath = '/allen/pr
     
     color_dict = {seg_comp_df.source.unique().tolist()[0]: 'red', seg_comp_df.source.unique().tolist()[1]:'blue'}
     nodes_df = pd.DataFrame(columns = ['Label','Color', 'Level', 'Source', 'Value']) 
-    
+    unknown_unmatched_cells = {}
+
     for source, g in seg_comp_df.groupby('source'):
         new_rows = []
         low_q_and_match = g.groupby('low_quality_cells').agg('count') # gives me low q t/f counts, and matched. 
@@ -187,11 +240,14 @@ def create_node_df_sankey(seg_comp_df, barcode, save=True, savepath = '/allen/pr
         rem_col_names = [x for x in g.columns[5:] if source+'_unfilt' not in x] #get remaining columns 
         rem_col_counts = g[g['low_quality_cells']==False].loc[:, rem_col_names].isna().value_counts().reset_index() #want only normal quality cells
         name = ' '.join(rem_col_names[0].split('_'))+ '<br>'
-        nodes_df.loc[len(nodes_df)] = {'Label': name+str(rem_col_counts.iloc[1,2]),'Color': color_dict[source], 
-                                              'Level': 3, 'Source':source, 'Value': rem_col_counts.iloc[1,2]}
-        rem_unmatched_cells = unmatched_cells-rem_col_counts.iloc[1,2]
+        nodes_df.loc[len(nodes_df)] = {'Label': name+str(rem_col_counts.iloc[-1,2]),'Color': color_dict[source], 
+                                              'Level': 3, 'Source':source, 'Value': rem_col_counts.iloc[-1,2]}
+        # remaining unmatched cells (known or unknown)
+        rem_unmatched_cells = unmatched_cells-rem_col_counts.iloc[-1,2]
         if rem_col_counts.loc[:, rem_col_names[-1]].unique() == False: #if no remaining cells
             name = 'unknown unmatched '+source+' cells <br>'
+            rem_cells_df = g[(g['low_quality_cells']==False)&(g[rem_col_names[0]].isna()==True)] #0 is cheating maybe 0:-1 later or osmething
+            unknown_unmatched_cells[source] = rem_cells_df.index.values.tolist()
         else:
             name = ' '.join(rem_col_names[-1].split('_'))
         nodes_df.loc[len(nodes_df)] = {'Label': name+str(rem_unmatched_cells),'Color': color_dict[source], 
@@ -255,7 +311,7 @@ def generate_sankey_diagram(seg_comp_df, barcode, save=True, savepath='/allen/pr
     OUTPUTS
         fig: sankey diagram figure
     """
-    nodes_df = create_node_df_sankey(seg_comp_df, barcode, save, savepath)
+    nodes_df, unknown_unmatched_cells = create_node_df_sankey(seg_comp_df, barcode, save, savepath)
     links_df = create_link_df_sankey(nodes_df, barcode, save, savepath)
     # Sankey plot setup
     data_trace = dict(type='sankey',node = dict(line = dict(color = "black",width = 0),
@@ -278,4 +334,38 @@ def generate_sankey_diagram(seg_comp_df, barcode, save=True, savepath='/allen/pr
     #save interactive file
     if save:
         fig.write_html(savepath+"/segmentation_comparison_"+barcode+"_"+source_1+'_'+source_2+".html")
-    return fig
+    return fig, unknown_unmatched_cells
+
+def scaling_check(seg_comp_df):
+    """
+    View two sections plotted on same axes, to check for scaling issues
+    INPUTS
+        seg_comp_df:dataframe with unique index describing cell spatial locations (x and y), segmentation identifier, low quality cell identifier, mutual matches, and putative doublets.
+    """
+    #get sources
+    seg_names = seg_comp_df.source.unique().tolist()
+    
+    #overview of both sections plotted on same axes
+    fig, ax = plt.subplots()
+    filtered_seg_a_df = seg_comp_df[(seg_comp_df['source']==seg_names[0])&(seg_comp_df['low_quality_cells']==False)]
+    filtered_seg_a_df.plot('center_x', 'center_y', kind='scatter', s=.1, label='high quality cells '+seg_names[0], ax=ax, color='blue', alpha=0.5)
+    filtered_seg_b_df = seg_comp_df[(seg_comp_df['source']==seg_names[1])&(seg_comp_df['low_quality_cells']==False)]
+    filtered_seg_b_df.plot('center_x', 'center_y', kind='scatter', s=.1, label='high quality cells '+seg_names[1], ax=ax, color='red', alpha=0.5)
+    plt.axis('equal')
+
+    #find center of one section to zoom in on
+    arr = filtered_seg_a_df[['center_x', 'center_y']].values
+    center = [np.mean(arr[:,0]), np.mean(arr[:,1])]
+    x_range = [center[0] - center[0]*.1, center[0]+  center[0]*.1]
+    y_range = [center[1] - center[1]*.1, center[1]+  center[1]*.1]
+    
+    #plot same area for both sections
+    fig, ax = plt.subplots()
+    filtered_seg_a_df = seg_comp_df[(seg_comp_df['source']==seg_names[0])&(seg_comp_df['low_quality_cells']==False)]
+    subs_a = filtered_seg_a_df[(filtered_seg_a_df['center_x'].between(x_range[0], x_range[1]))&(filtered_seg_a_df['center_y'].between(y_range[0], y_range[1]))]
+    subs_a.plot('center_x', 'center_y', kind='scatter', s=.5, label= seg_names[0], ax=ax, color='blue', alpha=0.5)
+    filtered_seg_b_df = seg_comp_df[(seg_comp_df['source']==seg_names[1])&(seg_comp_df['low_quality_cells']==False)]
+    subs_b = filtered_seg_b_df[(filtered_seg_b_df['center_x'].between(x_range[0], x_range[1]))&(filtered_seg_b_df['center_y'].between(y_range[0], y_range[1]))]
+    subs_b.plot('center_x', 'center_y', kind='scatter', s=.5, label=seg_names[1], ax=ax, color='red', alpha=0.5)
+    plt.axis('equal')
+
