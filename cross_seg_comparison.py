@@ -231,26 +231,34 @@ def create_node_df_sankey(seg_comp_df, barcode, save=True, savepath = '/allen/pr
         nodes_df.loc[len(nodes_df)] = {'Label': 'normal quality cells <br>'+str(low_q_and_match.iloc[0, 1]),'Color': color_dict[source], 
                                       'Level': 1, 'Source':source, 'Value': low_q_and_match.iloc[0, 1]}
         #matched and unmatched cells
-        unmatched_cells = low_q_and_match.iloc[0, 1] - low_q_and_match.iloc[0, 3] #normal minus matched = unmatched
-        nodes_df.loc[len(nodes_df)] = {'Label': 'matched cells <br>'+str(low_q_and_match.iloc[0, 3]),'Color': color_dict[source], 
+        #because row 1 in agg is false only! so false x low (normal) and false x match (unmatch!)
+        matched_cells = low_q_and_match.iloc[0,1] - low_q_and_match.iloc[0,3] 
+        nodes_df.loc[len(nodes_df)] = {'Label': 'matched cells <br>'+str(matched_cells),'Color': color_dict[source], 
+                                      'Level': 2, 'Source':source, 'Value': matched_cells}
+        nodes_df.loc[len(nodes_df)] = {'Label': 'unmatched cells <br>'+str(low_q_and_match.iloc[0, 3]),'Color': color_dict[source], 
                                       'Level': 2, 'Source':source, 'Value': low_q_and_match.iloc[0, 3]}
-        nodes_df.loc[len(nodes_df)] = {'Label': 'unmatched cells <br>'+str(unmatched_cells),'Color': color_dict[source], 
-                                      'Level': 2, 'Source':source, 'Value': unmatched_cells}
+        #raise flag if too few cells matched, may indicate scaling issue
+        if matched_cells <= (.01*len(g)): 
+            raise ValueError('The number of matched cells is less than 1% of total cells present. Please check your inputs for potential scaling issues.')
         
         rem_col_names = [x for x in g.columns[5:] if source+'_unfilt' not in x] #get remaining columns 
-        rem_col_counts = g[g['low_quality_cells']==False].loc[:, rem_col_names].isna().value_counts().reset_index() #want only normal quality cells
+        #pulling this to access unknown unmatched cells easily later
+        high_q_df = g[g[g.columns.tolist()[3]] == False]
+        unmatched_df = high_q_df[high_q_df[g.columns.tolist()[4]].isna() == False]
+        rem_col_df = unmatched_df.loc[:, rem_col_names] 
+        rem_col_counts= rem_col_df.isna().value_counts().reset_index()
         name = ' '.join(rem_col_names[0].split('_'))+ '<br>'
         nodes_df.loc[len(nodes_df)] = {'Label': name+str(rem_col_counts.iloc[-1,2]),'Color': color_dict[source], 
                                               'Level': 3, 'Source':source, 'Value': rem_col_counts.iloc[-1,2]}
         # remaining unmatched cells (known or unknown)
-        rem_unmatched_cells = unmatched_cells-rem_col_counts.iloc[-1,2]
-        if rem_col_counts.loc[:, rem_col_names[-1]].unique() == False: #if no remaining cells
-            name = 'unknown unmatched '+source+' cells <br>'
-            rem_cells_df = g[(g['low_quality_cells']==False)&(g[rem_col_names[0]].isna()==True)] #0 is cheating maybe 0:-1 later or osmething
-            unknown_unmatched_cells[source] = rem_cells_df.index.values.tolist()
-        else:
-            name = ' '.join(rem_col_names[-1].split('_'))
-        nodes_df.loc[len(nodes_df)] = {'Label': name+str(rem_unmatched_cells),'Color': color_dict[source], 
+        if len(rem_col_counts) > 1:
+            rem_unmatched_cells = rem_col_counts.iloc[1, 2]
+            if rem_col_counts.loc[:, rem_col_names[-1]].unique() == False: #if no remaining cells
+                name = 'unknown unmatched '+source+' cells <br>'
+                unknown_unmatched_cells[source] = rem_col_df[rem_col_df[rem_col_names[0]].isna()==True].index.values.tolist()
+            else:
+                name = ' '.join(rem_col_names[-1].split('_'))
+            nodes_df.loc[len(nodes_df)] = {'Label': name+str(rem_unmatched_cells),'Color': color_dict[source], 
                                 'Level': 3, 'Source':source, 'Value': rem_unmatched_cells}
     if save:
         nodes_df.to_csv(savepath+'/sankey_nodes_df'+barcode+'.csv')
