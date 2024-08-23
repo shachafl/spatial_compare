@@ -76,11 +76,14 @@ class SpatialCompare():
         self.category = category 
         self.can_compare = True
 
-    def spatial_plot(self, plot_legend=True,min_cells_to_plot = 10, decimate_for_spatial_plot=1,figsize=[20,10]):
+    def spatial_plot(self, plot_legend=True,min_cells_to_plot = 10, decimate_for_spatial_plot=1,figsize=[20,10], category_values=[]):
 
         plt.figure(figsize=figsize)
         all_category_values = set(self.ad_0.obs[self.category].unique()) | set(self.ad_1.obs[self.category].unique()) 
-        for c in all_category_values:
+        if len(category_values)==0:
+            category_values = all_category_values
+
+        for c in category_values:
             plt.subplot(1,2,1)
             plt.title(self.data_names[0])
             if np.sum(self.ad_0.obs[self.category]==c)>min_cells_to_plot:
@@ -107,10 +110,10 @@ class SpatialCompare():
             if plot_legend:
                 plt.legend(markerscale=5)
 
-    def de_novo_cluster(self, plot_stuff=False):
+    def de_novo_cluster(self, plot_stuff=False, correspondence_level = "leiden_1"):
         self.ad_0 = filter_and_cluster_twice(self.ad_0, plot_stuff=plot_stuff)
         self.ad_1 = filter_and_cluster_twice(self.ad_1, plot_stuff=plot_stuff)
-        find_best_match_groups(self.ad_0,self.ad_1)
+        find_best_match_groups(self.ad_0,self.ad_1,group_names=[correspondence_level,correspondence_level])
         self.can_compare = True
         self.category = "matched_leiden_clusters"
         return True
@@ -121,6 +124,7 @@ class SpatialCompare():
                         n_top_groups=100, 
                         n_shared_groups=30,
                         min_n_cells=100,
+                        category_values=[],
                         exclude_group_string="zzzzzzzzzzzzzzz",
                         plot_stuff=False, figsize=[10,10]):
 
@@ -133,7 +137,11 @@ class SpatialCompare():
         in_top_N_0 = sorted_counts[0].loc[[c for c in sorted_counts[0].index if exclude_group_string not in c],:].head(n_top_groups)
         in_top_N_1 = sorted_counts[1].loc[[c for c in sorted_counts[1].index if exclude_group_string not in c],:].head(n_top_groups)
         
-        
+        if len(category_values)>0:
+            in_top_N_0 = in_top_N_0.loc[in_top_N_0.index.isin(category_values),:]
+            in_top_N_1 = in_top_N_1.loc[in_top_N_1.index.isin(category_values),:]
+
+
         shared_top=list(in_top_N_0.loc[in_top_N_0.index.isin(in_top_N_1.index),:].index)
         
         if len(shared_top) > n_shared_groups:
@@ -208,7 +216,7 @@ class SpatialCompare():
             
             if plot_stuff:
                 plt.figure(figsize=[10,10])
-                plt.title(self.category+": "+category_value+"\nmean counts per cell\ncorrelation: "+str(np.corrcoef(means_0,means_1)[0][1])[:4])
+                plt.title(self.category+": "+category_value+"\nmean counts per cell\ncorrelation: "+str(category_records[-1]["correlation"])[:4]+" mean ratio: "+str(category_records[-1]["mean_ratio"])[:4])
                 low_expression = np.logical_and(means_0<1.0,means_1<1.0)
                 plt.loglog(means_0[low_expression],means_1[low_expression],'.', color = [.5,0.5,0.5])
                 plt.loglog(means_0[np.logical_not(low_expression)],means_1[np.logical_not(low_expression)],'.')
@@ -251,12 +259,12 @@ class SpatialCompare():
         
 
         fmr_kwargs = {key:kwargs[key] for key in inspect.signature(SpatialCompare.find_matched_groups).parameters.keys() if key in kwargs.keys()}
-        ce_kwargs = {key:kwargs[key] for key in inspect.signature(SpatialCompare.compare_expression).parameters.keys()if key in kwargs.keys()}
+        ce_kwargs = {key:kwargs[key] for key in inspect.signature(SpatialCompare.compare_expression).parameters.keys()if key in kwargs.keys() and key != "category_values"}
 
         match_results = self.find_matched_groups(
                                         **fmr_kwargs)
 
-    
+
         expression_results = self.compare_expression(
                        category_values=match_results["category_top_values"],
                        **ce_kwargs
@@ -411,7 +419,7 @@ def generate_label_confusion(input_ad,
         
     return {c_p[0]+"_"+c_p[1]:column_pair_results[ii] for ii, c_p in enumerate(column_pairs)}
 
-def find_best_match_groups(ad0,ad1,group_names=["leiden_0","leiden_0"], in_place=True):
+def find_best_match_groups(ad0,ad1,group_names=["leiden_1","leiden_1"], in_place=True):
 
     g_o_m_0 = grouped_obs_mean(ad0, group_names[0])
     g_o_m_1 = grouped_obs_mean(ad1, group_names[1])
