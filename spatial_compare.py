@@ -5,192 +5,272 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 import seaborn as sns
-
+from scipy import sparse
 from matplotlib.ticker import FormatStrFormatter
+import warnings
 
 
 
 DEFAULT_DATA_NAMES=["Data 0", "Data 1"]
 
-def find_matched_groups(df0,df1,data_names=DEFAULT_DATA_NAMES,
-                        category="subclass",
+           
+
+
+class SpatialCompare():
+    def __init__(self, ad_0:ad.AnnData, ad_1:ad.AnnData, 
+                data_names=DEFAULT_DATA_NAMES,
+                obsm_key="spatial_cirro_grid", 
+                category="subclass",
+                ):
+        
+        
+        # validate self.ad_0 and self.ad_1:
+        if not isinstance(ad_0, ad.AnnData) or not isinstance(ad_1, ad.AnnData):
+            raise ValueError("ad_0 and self.ad_1 must be AnnData objects")
+        
+        self.ad_0 = ad_0
+        self.ad_1 = ad_1
+       
+        #validate spatial key in obsm
+        if obsm_key not in self.ad_0.obsm.keys() or obsm_key not in self.ad_1.obsm.keys():
+            raise ValueError(" obsm key "+obsm_key+" is not in both input AnnData objects")    
+        
+        self.obsm_key = obsm_key
+
+        #vaidate category in obs:
+
+        if category not in self.ad_0.obs.columns or category not in self.ad_1.obs.columns:
+            self.category = None
+            self.can_compare = False
+            warnings.warn("category "+category+" is not in both input AnnData objects")
+        
+        self.category = category 
+
+        # identify the intersection of genes between the 2 datasets:
+        self.shared_genes = list(set(self.ad_0.var.index)&set(self.ad_1.var.index))
+        print("input anndata objects have "+str(len(self.shared_genes))+ " shared genes")
+
+
+
+
+        self.can_compare = True
+
+        self.data_names = data_names
+
+
+
+
+    def set_category(self, category):
+        if category not in self.ad_0.obs.columns or category not in self.ad_1.obs.columns:
+            self.category = None
+            self.can_compare = False
+            raise Warning("category "+category+" is not in both input AnnData objects") 
+        
+        self.category = category 
+        self.can_compare = True
+
+    def spatial_plot(self, plot_legend=True,min_cells_to_plot = 10, decimate_for_spatial_plot=1,figsize=[20,10]):
+
+        plt.figure(figsize=figsize)
+        all_category_values = set(self.ad_0.obs[self.category].unique()) | set(self.ad_1.obs[self.category].unique()) 
+        for c in all_category_values:
+            plt.subplot(1,2,1)
+            plt.title(self.data_names[0])
+            if np.sum(self.ad_0.obs[self.category]==c)>min_cells_to_plot:
+                label = c+": "+str(np.sum(self.ad_0.obs[self.category]==c))
+            else:
+                label = None
+
+            plt.plot(self.ad_0.obsm[self.obsm_key][self.ad_0.obs[self.category]==c,0][::decimate_for_spatial_plot], 
+                 self.ad_0.obsm[self.obsm_key][self.ad_0.obs[self.category]==c,1][::decimate_for_spatial_plot],'.',
+                     label = label, markersize=.5)
+            plt.axis('equal')
+            if plot_legend:
+                plt.legend(markerscale=5)
+            plt.subplot(1,2,2)
+            plt.title(self.data_names[1])
+            if np.sum(self.ad_1.obs[self.category]==c)>min_cells_to_plot:
+                label = c+": "+str(np.sum(self.ad_1.obs[self.category]==c))
+            else:
+                label = None
+            plt.plot(self.ad_1.obsm[self.obsm_key][self.ad_1.obs[self.category]==c,0][::decimate_for_spatial_plot], 
+                 self.ad_1.obsm[self.obsm_key][self.ad_1.obs[self.category]==c,1][::decimate_for_spatial_plot],'.',
+                     label = label, markersize=.5)
+            plt.axis('equal')
+            if plot_legend:
+                plt.legend(markerscale=5)
+
+    def de_novo_cluster(self, plot_stuff=False):
+        self.ad_0 = filter_and_cluster_twice(self.ad_0, plot_stuff=plot_stuff)
+        self.ad_1 = filter_and_cluster_twice(self.ad_1, plot_stuff=plot_stuff)
+        find_best_match_groups(self.ad_0,self.ad_1)
+        self.can_compare = True
+        self.category = "matched_leiden_clusters"
+        return True
+
+
+
+    def find_matched_groups(self,
                         n_top_groups=100, 
                         n_shared_groups=30,
                         min_n_cells=100,
-                       exclude_group_string="NN",
-                       plot_stuff=False, figsize=[10,10]):
+                        exclude_group_string="zzzzzzzzzzzzzzz",
+                        plot_stuff=False, figsize=[10,10]):
 
-    sorted_counts={}
-    _other_columns = [[c for c in df0.columns if c!=category][0],[c for c in df1.columns if c!=category][0]]
+        sorted_counts={}
+        _other_columns = [[c for c in self.ad_0.obs.columns if c!=self.category][0],[c for c in self.ad_1.obs.columns if c!=self.category][0]]
 
-    for ii,df in enumerate([df0,df1]):    
-        sorted_counts[ii] = df.loc[:,[category,_other_columns[ii]]].groupby(category,observed=True).count().sort_values(_other_columns[ii], ascending=False)
-        
-        
-    in_top_N_0 = sorted_counts[0].loc[[c for c in sorted_counts[0].index if exclude_group_string not in c],:].head(n_top_groups)
-    in_top_N_1 = sorted_counts[1].loc[[c for c in sorted_counts[1].index if exclude_group_string not in c],:].head(n_top_groups)
-    
-    
-    shared_top=list(in_top_N_0.loc[in_top_N_0.index.isin(in_top_N_1.index),:].index)
-    
-    if len(shared_top) > n_shared_groups:
-        shared_top = shared_top[:n_shared_groups+1]
-    
-    prop_corr = np.corrcoef( in_top_N_0.loc[shared_top,:][_other_columns[0]],in_top_N_1.loc[shared_top,:][_other_columns[1]])[1][0]
-    
-    if plot_stuff:
-            plt.figure(figsize=figsize)
-            plt.loglog(in_top_N_0.loc[shared_top,:][_other_columns[0]],in_top_N_1.loc[shared_top,:][_other_columns[1]],'.')
-            for g in shared_top:
-                if len(g)>50:
-                    continue
-                plt.text(in_top_N_0.loc[g,:][_other_columns[0]],in_top_N_1.loc[g,:][_other_columns[1]], g)
-            plt.xlabel(data_names[0])
-            plt.ylabel(data_names[1])
-            plt.title("cell type abundances\n correlation = "+str(prop_corr)[:6])
-            plt.plot([np.min(in_top_N_0.loc[shared_top,:][_other_columns[0]]),np.max(in_top_N_0.loc[shared_top,:][_other_columns[0]])],
-                     [np.min(in_top_N_0.loc[shared_top,:][_other_columns[0]]),np.max(in_top_N_0.loc[shared_top,:][_other_columns[0]])],'--')
-                     
-            plt.axis('equal')
-    return {"category_top_values":shared_top,
-            "category":category,
-            "proportion_correlation":prop_corr,
-           "n0":in_top_N_0,
-           "n1":in_top_N_1}
+        for ii,df in enumerate([self.ad_0.obs,self.ad_1.obs]):    
+            sorted_counts[ii] = df.loc[:,[self.category,_other_columns[ii]]].groupby(self.category,observed=True).count().sort_values(_other_columns[ii], ascending=False)
             
-
-def compare_expression(ad_0,ad_1,data_names=DEFAULT_DATA_NAMES,
-                       category="cluster_name",
-                       category_values=[], plot_stuff=False,
-                      min_mean_expression=2,
-                      min_genes_to_compare =5):
-    # group cells
-    if len(category_values)==0:
-        raise ValueError("please supply a list of values for the category "+category)
-
-    # identify the intersection of genes between the 2 datasets:
-    shared_genes = list(set(ad_0.var.index)&set(ad_1.var.index))
-    print(len(shared_genes))
-    category_records=[]
-    gene_ratio_dfs = {}
-    for category_value in category_values:
-        group_mask_0 = ad_0.obs[category]==category_value
-        group_mask_1 = ad_1.obs[category]==category_value
+        in_top_N_0 = sorted_counts[0].loc[[c for c in sorted_counts[0].index if exclude_group_string not in c],:].head(n_top_groups)
+        in_top_N_1 = sorted_counts[1].loc[[c for c in sorted_counts[1].index if exclude_group_string not in c],:].head(n_top_groups)
         
-    
-        if np.sum(group_mask_0)==0 or np.sum(group_mask_1)==0:
-            raise ValueError("at least 1 input has no cells in "+category+" == "+category_value)
-
-        means_0 = np.array(np.mean(ad_0[group_mask_0, shared_genes].X,axis=0)).flatten()
-        means_1 = np.array(np.mean(ad_1[group_mask_1, shared_genes].X,axis=0)).flatten()
-        means_0_gt_min = np.nonzero(means_0>min_mean_expression)[0]
-        means_1_gt_min = np.nonzero(means_1>min_mean_expression)[0]
-        shared_above_mean = list(set(list(means_0_gt_min))& set(list(means_1_gt_min)))
-        if len(shared_above_mean)<min_genes_to_compare:
-            print(means_0)
-            print(means_1)
-            raise ValueError("less than "+str(min_genes_to_compare)+" shared genes above minimum mean = "+str(min_mean_expression))
-
         
-        means_0 = means_0[shared_above_mean]
-        means_1 = means_1[shared_above_mean]
-        shared_genes = np.array(shared_genes)[shared_above_mean]
-        p_coef = np.polynomial.Polynomial.fit(means_0,means_1,1).convert().coef
-        category_records.append({category:category_value,
-                                 "slope":p_coef[1],
-                                 "mean_ratio": np.mean(means_1/means_0),
-                                "correlation":np.corrcoef(means_0,means_1)[0][1],
-                                "n_cells_0": np.sum(group_mask_0),
-                                "n_cells_1":np.sum(group_mask_1),
-                                "total_count_ratio": np.sum(ad_1[group_mask_1, shared_genes].X)/np.sum(ad_0[group_mask_0, shared_genes].X)
-                                })
+        shared_top=list(in_top_N_0.loc[in_top_N_0.index.isin(in_top_N_1.index),:].index)
         
-        gene_ratio_dfs[category_value] = pd.DataFrame(means_1/means_0,columns=[data_names[1]+" / "+data_names[0]+" ratio"], index = shared_genes)
+        if len(shared_top) > n_shared_groups:
+            shared_top = shared_top[:n_shared_groups+1]
+        
+        prop_corr = np.corrcoef( in_top_N_0.loc[shared_top,:][_other_columns[0]],in_top_N_1.loc[shared_top,:][_other_columns[1]])[1][0]
         
         if plot_stuff:
-            plt.figure(figsize=[10,10])
-            plt.title(category+": "+category_value+"\nmean counts per cell\ncorrelation: "+str(np.corrcoef(means_0,means_1)[0][1])[:4])
-            low_expression = np.logical_and(means_0<1.0,means_1<1.0)
-            plt.loglog(means_0[low_expression],means_1[low_expression],'.', color = [.5,0.5,0.5])
-            plt.loglog(means_0[np.logical_not(low_expression)],means_1[np.logical_not(low_expression)],'.')
-
-            plt.xlabel(data_names[0]+", N = "+str(np.sum(group_mask_0)))
-            plt.ylabel(data_names[1]+", N = "+str(np.sum(group_mask_1)))
-
-            
-            for g in shared_genes:
-                if (means_0[np.nonzero(np.array(shared_genes)==g)]==0 or 
-                        means_1[np.nonzero(np.array(shared_genes)==g)]==0) or low_expression[np.array(shared_genes)==g]:
-                    continue
-                plt.text(means_0[np.nonzero(np.array(shared_genes)==g)]
-                         ,means_1[np.nonzero(np.array(shared_genes)==g)], g, fontsize=10)
-            plt.plot([np.min(means_0), np.max(means_0)], 
-                     [np.min(means_0), np.max(means_0)],'--')
-    gene_ratio_df = pd.concat(gene_ratio_dfs,axis=1)
+                plt.figure(figsize=figsize)
+                plt.loglog(in_top_N_0.loc[shared_top,:][_other_columns[0]],in_top_N_1.loc[shared_top,:][_other_columns[1]],'.')
+                for g in shared_top:
+                    # long names are annoying to read
+                    if len(g)<50:
+                        plt.text(in_top_N_0.loc[g,:][_other_columns[0]],in_top_N_1.loc[g,:][_other_columns[1]], g)
+                plt.xlabel(self.data_names[0])
+                plt.ylabel(self.data_names[1])
+                plt.title("cell type abundances\n correlation = "+str(prop_corr)[:6])
+                plt.plot([np.min(in_top_N_0.loc[shared_top,:][_other_columns[0]]),np.max(in_top_N_0.loc[shared_top,:][_other_columns[0]])],
+                        [np.min(in_top_N_0.loc[shared_top,:][_other_columns[0]]),np.max(in_top_N_0.loc[shared_top,:][_other_columns[0]])],'--')
+                        
+                plt.axis('equal')
+        return {"category_top_values":shared_top,
+                "category":self.category,
+                "proportion_correlation":prop_corr,
+            "n0":in_top_N_0,
+            "n1":in_top_N_1}
     
-    return {"data_names":data_names,
-            "category_results":pd.DataFrame.from_records(category_records),
-            "gene_ratio_dataframe":gene_ratio_df}
+    def compare_expression(self, category_values=[], plot_stuff=False,
+                      min_mean_expression=2,
+                      min_genes_to_compare =5, min_cells = 10):
+        # group cells
+        if len(category_values)==0:
+            raise ValueError("please supply a list of values for the category "+self.category)
 
-
-
-def spatial_compare(ad_0:ad.AnnData, ad_1:ad.AnnData,
-                    spatial_plot=False,obsm_key="spatial_cirro_grid", 
-                    plot_legend=True,min_cells_to_plot = 10, decimate_for_spatial_plot=1, **kwargs):
-
-    fmr_kwargs = {key:kwargs[key] for key in inspect.signature(find_matched_groups).parameters.keys() if key in kwargs.keys()}
-    ce_kwargs = {key:kwargs[key] for key in inspect.signature(compare_expression).parameters.keys()if key in kwargs.keys()}
-
-    if spatial_plot:
-        if obsm_key not in ad_0.obsm.keys() or obsm_key not in ad_1.obsm.keys():
-            raise ValueError("spatial_plot is True, but the obsm key "+obsm_key+" is not in both input AnnData objects")    
+ 
+        category_records=[]
+        gene_ratio_dfs = {}
+        for category_value in category_values:
+            group_mask_0 = self.ad_0.obs[self.category]==category_value
+            group_mask_1 = self.ad_1.obs[self.category]==category_value
+            
         
-        plt.figure(figsize=[20,10])
-        all_category_values = set(ad_0.obs[fmr_kwargs["category"]].unique()) | set(ad_1.obs[fmr_kwargs["category"]].unique()) 
-        for c in all_category_values:
-            plt.subplot(1,2,1)
-            plt.title(ce_kwargs["data_names"][0])
-            if np.sum(ad_0.obs[fmr_kwargs["category"]]==c)>min_cells_to_plot:
-                label = c+": "+str(np.sum(ad_0.obs[fmr_kwargs["category"]]==c))
-            else:
-                label = None
-            plt.plot(ad_0.obsm[obsm_key][ad_0.obs[fmr_kwargs["category"]]==c,0][::decimate_for_spatial_plot], 
-                 ad_0.obsm[obsm_key][ad_0.obs[fmr_kwargs["category"]]==c,1][::decimate_for_spatial_plot],'.',
-                     label = label, markersize=.5)
-            plt.axis('equal')
-            if plot_legend:
-                plt.legend()
-            plt.subplot(1,2,2)
-            plt.title(ce_kwargs["data_names"][1])
-            if np.sum(ad_1.obs[fmr_kwargs["category"]]==c)>min_cells_to_plot:
-                label = c+": "+str(np.sum(ad_1.obs[fmr_kwargs["category"]]==c))
-            else:
-                label = None
-            plt.plot(ad_1.obsm[obsm_key][ad_1.obs[fmr_kwargs["category"]]==c,0][::decimate_for_spatial_plot], 
-                 ad_1.obsm[obsm_key][ad_1.obs[fmr_kwargs["category"]]==c,1][::decimate_for_spatial_plot],'.',
-                     label = label, markersize=.5)
-            plt.axis('equal')
-            if plot_legend:
-                plt.legend()
-    match_results = find_matched_groups(ad_0.obs,ad_1.obs, 
+            if np.sum(group_mask_0)< min_cells or np.sum(group_mask_1)< min_cells:
+                print("at least 1 input has less than "+str(min_cells)+" cells in "+self.category+" == "+category_value)
+                continue
+
+            means_0 = np.array(np.mean(self.ad_0[group_mask_0, self.shared_genes].X,axis=0)).flatten()
+            means_1 = np.array(np.mean(self.ad_1[group_mask_1, self.shared_genes].X,axis=0)).flatten()
+            means_0_gt_min = np.nonzero(means_0>min_mean_expression)[0]
+            means_1_gt_min = np.nonzero(means_1>min_mean_expression)[0]
+            shared_above_mean = list(set(list(means_0_gt_min))& set(list(means_1_gt_min)))
+            if len(shared_above_mean)<min_genes_to_compare:
+                print(means_0)
+                print(means_1)
+                print( self.category+" "+category_value+" has less than "+str(min_genes_to_compare)+"\n shared genes above minimum mean = "+str(min_mean_expression))
+                continue
+            
+            means_0 = means_0[shared_above_mean]
+            means_1 = means_1[shared_above_mean]
+            shared_genes = np.array(self.shared_genes)[shared_above_mean]
+            p_coef = np.polynomial.Polynomial.fit(means_0,means_1,1).convert().coef
+            category_records.append({self.category:category_value,
+                                    "slope":p_coef[1],
+                                    "mean_ratio": np.mean(means_1/means_0),
+                                    "correlation":np.corrcoef(means_0,means_1)[0][1],
+                                    "n_cells_0": np.sum(group_mask_0),
+                                    "n_cells_1":np.sum(group_mask_1),
+                                    "total_count_ratio": np.sum(self.ad_1[group_mask_1, shared_genes].X)/np.sum(self.ad_0[group_mask_0, shared_genes].X)
+                                    })
+            
+            gene_ratio_dfs[category_value] = pd.DataFrame(means_1/means_0,columns=[self.data_names[1]+" / "+self.data_names[0]+" ratio"], index = shared_genes)
+            
+            if plot_stuff:
+                plt.figure(figsize=[10,10])
+                plt.title(self.category+": "+category_value+"\nmean counts per cell\ncorrelation: "+str(np.corrcoef(means_0,means_1)[0][1])[:4])
+                low_expression = np.logical_and(means_0<1.0,means_1<1.0)
+                plt.loglog(means_0[low_expression],means_1[low_expression],'.', color = [.5,0.5,0.5])
+                plt.loglog(means_0[np.logical_not(low_expression)],means_1[np.logical_not(low_expression)],'.')
+
+                plt.xlabel(self.data_names[0]+", N = "+str(np.sum(group_mask_0)))
+                plt.ylabel(self.data_names[1]+", N = "+str(np.sum(group_mask_1)))
+
+                
+                for g in shared_genes:
+                    if (means_0[np.nonzero(np.array(shared_genes)==g)]==0 or 
+                            means_1[np.nonzero(np.array(shared_genes)==g)]==0) or low_expression[np.array(shared_genes)==g]:
+                        continue
+                    plt.text(means_0[np.nonzero(np.array(shared_genes)==g)]
+                            ,means_1[np.nonzero(np.array(shared_genes)==g)], g, fontsize=10)
+                plt.plot([np.min(means_0), np.max(means_0)], 
+                        [np.min(means_0), np.max(means_0)],'--')
+        gene_ratio_df = pd.concat(gene_ratio_dfs,axis=1)
+        
+        return {"data_names":self.data_names,
+                "category_results":pd.DataFrame.from_records(category_records),
+                "gene_ratio_dataframe":gene_ratio_df}
+
+    def plot_detection_ratio(self,figsize=[15,15]):
+
+        detection_ratio_plots(self.spatial_compare()["expression_results"]["gene_ratio_dataframe"],
+                              data_names=self.data_names, figsize=figsize)
+
+    def spatial_compare(self, **kwargs):
+
+        if "category" in kwargs.keys():
+            self.set_category(kwargs["category"])
+
+
+        if not self.can_compare:
+            raise ValueError("cannot compare AnnData objects without a category.\n run de novo clustering or supply a category with set_category()")
+        
+
+        fmr_kwargs = {key:kwargs[key] for key in inspect.signature(SpatialCompare.find_matched_groups).parameters.keys() if key in kwargs.keys()}
+        ce_kwargs = {key:kwargs[key] for key in inspect.signature(SpatialCompare.compare_expression).parameters.keys()if key in kwargs.keys()}
+
+        match_results = self.find_matched_groups(
                                         **fmr_kwargs)
 
     
-    expression_results = compare_expression(ad_0,ad_1,
+        expression_results = self.compare_expression(
                        category_values=match_results["category_top_values"],
                        **ce_kwargs
                       )
-    match_results["expression_results"] = expression_results
-    return match_results
+        match_results["expression_results"] = expression_results
+        return match_results
 
+    def run_and_plot(self, **kwargs):
+        if "category" in kwargs.keys():
+            self.set_category(kwargs["category"])
+    
+        self.spatial_plot()
+        self.find_matched_groups()
+        sc_results = self.spatial_compare(plot_stuff=True, **kwargs)
+        self.plot_detection_ratio(figsize=[30,20])
+        self.results = sc_results
+        return True
 
 
 
 def filter_and_cluster_twice(input_ad, n_hvgs=2000, 
-                       min_max_counts=3,min_cell_area=300,
+                       min_max_counts=3,
                        min_transcript_counts=50,
                        n_pcs=[50,20],
-                       n_iterations=[5,5], plot_stuff=True):
+                       n_iterations=[1,1], plot_stuff=True):
     """ 
     filter genes and cells, then run 2 rounds of Leiden clustering on an anndata object 
     resulting clusters are named "leiden_XX_YY" where "XX" and "YY" are the numbers of the first and second
@@ -198,10 +278,15 @@ def filter_and_cluster_twice(input_ad, n_hvgs=2000,
     
     this function returns a copy of the anndata object
     """
-    if "gene" in input_ad.var.columns:
-        low_detection_genes = input_ad.var.iloc[np.nonzero(np.max(input_ad.X, axis = 0)<=min_max_counts)].gene
-    else:
-        low_detection_genes = input_ad.var.iloc[np.nonzero(np.max(input_ad.X, axis = 0)<=min_max_counts)].index
+    
+    # switch to array instead of sparse matrix:
+    if isinstance(input_ad.X, sparse.csr.csr_matrix):
+        input_ad.X = input_ad.X.toarray()
+    
+    if "gene" not in input_ad.var.columns:
+        input_ad.var["gene"]=input_ad.var.index
+
+    low_detection_genes = input_ad.var.iloc[np.nonzero(np.max(input_ad.X, axis = 0)<=min_max_counts)].gene
 
     # throw out genes if no cells have more than 3 counts
     to_cluster = input_ad[input_ad.obs.transcript_counts>=min_transcript_counts,np.logical_not(input_ad.var.gene.isin(low_detection_genes))].copy()
@@ -221,12 +306,6 @@ def filter_and_cluster_twice(input_ad, n_hvgs=2000,
     if plot_stuff:
         sc.pl.pca_variance_ratio(to_cluster, n_pcs[0], log=True)
     
-        sc.pl.umap(
-            to_cluster,
-            # Setting a smaller point size to get prevent overlap
-            size=2,
-        )
-
 
     sc.tl.leiden(to_cluster, n_iterations=n_iterations[0])
     to_cluster.obs.rename(columns={"leiden":"leiden_0"},inplace=True)
@@ -235,16 +314,20 @@ def filter_and_cluster_twice(input_ad, n_hvgs=2000,
         sc.pl.umap(to_cluster, color=["leiden_0"],size=2)
     
     # per cluster, repeat PCA and clustering...
+    
+    
+    
     all_subs=[]
     for cl in to_cluster.obs.leiden_0.unique():
         subcopy = to_cluster[to_cluster.obs.leiden_0==cl,:].copy()
+        
         sc.tl.pca(subcopy,n_comps=n_pcs[1])    
         sc.pp.neighbors(subcopy)
         sc.tl.leiden(subcopy, n_iterations=n_iterations[1])
         if plot_stuff:
-            sc.pl.umap(subcopy, color=["leiden_0"])
+            sc.pl.umap(subcopy, color=["leiden"])
         subcopy.obs["leiden_1"]=["leiden_"+str(cl).zfill(2)+"_"+str(g).zfill(2) for g in subcopy.obs.leiden]
-        
+
         all_subs.append(subcopy)
     
     iterative_clusters_ad = ad.concat(all_subs)
@@ -253,7 +336,7 @@ def filter_and_cluster_twice(input_ad, n_hvgs=2000,
 
 
 
-def detection_ratio_plots(gene_ratio_df, data_names=DEFAULT_DATA_NAMES, figsize=[15,15]):
+def detection_ratio_plots(gene_ratio_df,data_names=DEFAULT_DATA_NAMES, figsize=[15,15]):
     
     sorted_genes=[str(s) for s in gene_ratio_df.mean(axis=1).sort_values().index.values]
     
@@ -271,11 +354,12 @@ def detection_ratio_plots(gene_ratio_df, data_names=DEFAULT_DATA_NAMES, figsize=
 
     ax.yaxis.set_minor_formatter(FormatStrFormatter("%.1f"))
     plt.plot(ax.get_xlim(), [1,1],'-')
-        
-
+    
+    # sort columns for boxplot based on mean detection ratio:
+    sorted_categories = gene_ratio_df.columns[np.argsort(gene_ratio_df.mean(axis=0))]
 
     plt.subplot(3,1,2)
-    ax =sns.boxplot(gene_ratio_df)
+    ax =sns.boxplot(gene_ratio_df.loc[:,sorted_categories])
     plt.ylabel("transcript detection ratio "+data_names[1]+" / "+data_names[0])
     ax.set_xticks(ax.get_xticks(), ax.get_xticklabels(), rotation=45, ha='right')
     plt.plot(ax.get_xlim(), [1,1])
