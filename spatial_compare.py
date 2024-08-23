@@ -46,6 +46,13 @@ class SpatialCompare():
         
         self.category = category 
 
+
+
+        for adobj in [self.ad_0, self.ad_1]:
+            if "gene" not in adobj.var.columns:
+                adobj.var["gene"]=adobj.var.index
+
+
         # identify the intersection of genes between the 2 datasets:
         self.shared_genes = list(set(self.ad_0.var.index)&set(self.ad_1.var.index))
         print("input anndata objects have "+str(len(self.shared_genes))+ " shared genes")
@@ -57,7 +64,7 @@ class SpatialCompare():
 
         self.data_names = data_names
 
-
+        self.spatial_compare_results = None
 
 
     def set_category(self, category):
@@ -155,7 +162,7 @@ class SpatialCompare():
             "n1":in_top_N_1}
     
     def compare_expression(self, category_values=[], plot_stuff=False,
-                      min_mean_expression=2,
+                      min_mean_expression=.2,
                       min_genes_to_compare =5, min_cells = 10):
         # group cells
         if len(category_values)==0:
@@ -168,25 +175,25 @@ class SpatialCompare():
             group_mask_0 = self.ad_0.obs[self.category]==category_value
             group_mask_1 = self.ad_1.obs[self.category]==category_value
             
-        
+            
             if np.sum(group_mask_0)< min_cells or np.sum(group_mask_1)< min_cells:
                 print("at least 1 input has less than "+str(min_cells)+" cells in "+self.category+" == "+category_value)
                 continue
 
-            means_0 = np.array(np.mean(self.ad_0[group_mask_0, self.shared_genes].X,axis=0)).flatten()
-            means_1 = np.array(np.mean(self.ad_1[group_mask_1, self.shared_genes].X,axis=0)).flatten()
+            means_0 = np.array(np.mean(self.ad_0[group_mask_0, self.ad_0.var.index.isin(self.shared_genes)].X,axis=0)).flatten()
+            means_1 = np.array(np.mean(self.ad_1[group_mask_1, self.ad_1.var.index.isin(self.shared_genes)].X,axis=0)).flatten()
             means_0_gt_min = np.nonzero(means_0>min_mean_expression)[0]
             means_1_gt_min = np.nonzero(means_1>min_mean_expression)[0]
-            shared_above_mean = list(set(list(means_0_gt_min))& set(list(means_1_gt_min)))
+            above_means0 = self.ad_0.var[self.ad_0.var.index.isin(self.shared_genes)].iloc[means_0_gt_min]
+            above_means1 = self.ad_1.var[self.ad_1.var.index.isin(self.shared_genes)].iloc[means_1_gt_min]
+            shared_above_mean = [g for g in above_means1.index if g in above_means0.index]
             if len(shared_above_mean)<min_genes_to_compare:
-                print(means_0)
-                print(means_1)
                 print( self.category+" "+category_value+" has less than "+str(min_genes_to_compare)+"\n shared genes above minimum mean = "+str(min_mean_expression))
                 continue
             
-            means_0 = means_0[shared_above_mean]
-            means_1 = means_1[shared_above_mean]
-            shared_genes = np.array(self.shared_genes)[shared_above_mean]
+            means_0 = np.array(np.mean(self.ad_0[group_mask_0, shared_above_mean].X,axis=0)).flatten()
+            means_1 = np.array(np.mean(self.ad_1[group_mask_1, shared_above_mean].X,axis=0)).flatten()
+            shared_genes = shared_above_mean
             p_coef = np.polynomial.Polynomial.fit(means_0,means_1,1).convert().coef
             category_records.append({self.category:category_value,
                                     "slope":p_coef[1],
@@ -218,15 +225,19 @@ class SpatialCompare():
                             ,means_1[np.nonzero(np.array(shared_genes)==g)], g, fontsize=10)
                 plt.plot([np.min(means_0), np.max(means_0)], 
                         [np.min(means_0), np.max(means_0)],'--')
-        gene_ratio_df = pd.concat(gene_ratio_dfs,axis=1)
-        
+        print(gene_ratio_dfs.keys())
+        if len(gene_ratio_dfs.keys())>0:
+            
+            gene_ratio_df = pd.concat(gene_ratio_dfs,axis=1)
+        else:
+            gene_ratio_df = None
         return {"data_names":self.data_names,
                 "category_results":pd.DataFrame.from_records(category_records),
                 "gene_ratio_dataframe":gene_ratio_df}
 
-    def plot_detection_ratio(self,figsize=[15,15]):
+    def plot_detection_ratio(self,gene_ratio_dataframe, figsize=[15,15]):
 
-        detection_ratio_plots(self.spatial_compare()["expression_results"]["gene_ratio_dataframe"],
+        detection_ratio_plots(gene_ratio_dataframe,
                               data_names=self.data_names, figsize=figsize)
 
     def spatial_compare(self, **kwargs):
@@ -258,10 +269,8 @@ class SpatialCompare():
             self.set_category(kwargs["category"])
     
         self.spatial_plot()
-        self.find_matched_groups()
-        sc_results = self.spatial_compare(plot_stuff=True, **kwargs)
-        self.plot_detection_ratio(figsize=[30,20])
-        self.results = sc_results
+        self.spatial_compare_results = self.spatial_compare(plot_stuff=True, **kwargs)
+        self.plot_detection_ratio(self.spatial_compare_results["expression_results"]["gene_ratio_dataframe"],figsize=[30,20])
         return True
 
 
@@ -276,21 +285,24 @@ def filter_and_cluster_twice(input_ad, n_hvgs=2000,
     resulting clusters are named "leiden_XX_YY" where "XX" and "YY" are the numbers of the first and second
     round clusters
     
-    this function returns a copy of the anndata object
+    this function returns a modified copy of the anndata object with potentially fewer genes and cells!
     """
     
     # switch to array instead of sparse matrix:
     if isinstance(input_ad.X, sparse.csr.csr_matrix):
         input_ad.X = input_ad.X.toarray()
     
-    if "gene" not in input_ad.var.columns:
-        input_ad.var["gene"]=input_ad.var.index
 
     low_detection_genes = input_ad.var.iloc[np.nonzero(np.max(input_ad.X, axis = 0)<=min_max_counts)].gene
-
+    
     # throw out genes if no cells have more than 3 counts
-    to_cluster = input_ad[input_ad.obs.transcript_counts>=min_transcript_counts,np.logical_not(input_ad.var.gene.isin(low_detection_genes))].copy()
+    to_cluster = input_ad[input_ad.obs.transcript_counts>=min_transcript_counts,[g for g in input_ad.var.gene if g not in low_detection_genes]]
+
+    # this is to prevent multiple "leiden"
+    to_cluster.obs = to_cluster.obs.loc[:,[c for c in to_cluster.obs.columns if c not in ["leiden","leiden_0","leiden_1"]]]
+#    to_cluster = input_ad[input_ad.obs.transcript_counts>=min_transcript_counts,np.logical_not(input_ad.var.gene.isin(low_detection_genes))].copy()
     # Normalizing to median total counts
+    # to_cluster.var = input_ad[input_ad.obs.transcript_counts>=min_transcript_counts,np.logical_not(input_ad.var.gene.isin(low_detection_genes))].var.copy() 
 
     sc.pp.normalize_total(to_cluster)
     # Logarithmize the data
@@ -314,8 +326,6 @@ def filter_and_cluster_twice(input_ad, n_hvgs=2000,
         sc.pl.umap(to_cluster, color=["leiden_0"],size=2)
     
     # per cluster, repeat PCA and clustering...
-    
-    
     
     all_subs=[]
     for cl in to_cluster.obs.leiden_0.unique():
