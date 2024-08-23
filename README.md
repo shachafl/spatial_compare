@@ -1,5 +1,5 @@
 
-#`Spatial_Compare`
+`Spatial_Compare`
 Comparison of spatial experiments based on matched groups. 
 
 _Not fancy, helpful_ &#8482;.
@@ -21,9 +21,9 @@ To install `Spatial_Compare`:
 
 Alternatively you can install directly from github:
 
-    ```
+```
     pip install git+https://github.com/brianl/spatial_compare.git
-    ```
+```
 
 
 The example notebook walks through some comparisons across Xenium experiments on marmoset brain.
