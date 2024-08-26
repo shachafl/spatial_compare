@@ -1,9 +1,6 @@
+#!/usr/bin/env python
 from pathlib import Path
 import setuptools
-
-#!/usr/bin/env python
-
-
 
 setuptools.setup(
     name="spatial_compare",
@@ -17,7 +14,16 @@ setuptools.setup(
         "igraph",
         "leidenalg"
     ],
+    install_requires=[
+        "anndata",
+        "jupyter",
+        "seaborn",
+        "scanpy",
+        "scipy",
+        "igraph",
+        "leidenalg"
+    ],
     include_package_data=True,
-    version="0.1",
+    version="0.2",
     python_requires=">=3.9"
 )
