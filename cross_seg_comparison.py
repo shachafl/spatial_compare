@@ -1,11 +1,10 @@
+from matplotlib import pyplot as plt
+import numpy as np
 import pandas as pd
+import plotly.graph_objs as go
 from scanpy import read_h5ad
 from scipy.spatial import cKDTree
-import numpy as np
-import matplotlib.pyplot as plt 
 from pathlib import Path
-import plotly.graph_objs as go
-
 
 def transcripts_per_cell(cell_x_gene):
     return cell_x_gene.sum(axis=1).to_numpy()
@@ -43,14 +42,15 @@ def create_seg_comp_df(barcode, seg_name, base_path, min_transcripts):
     return seg_df
 
 
-def get_segmentation_data(barcode, seg_name_a, seg_name_b, seg_a_path, seg_b_path, save, savepath, reuse_saved=True, min_transcripts=40):
+def get_segmentation_data(self, barcode, seg_name_a, seg_name_b, seg_a_path, seg_b_path, save, savepath, reuse_saved=True, min_transcripts=40):
     """
-    Loads or calls function to collect segmentation data
+    Loads or calls function to collect segmentation data from raw results
     Inputs:
         Barcode: unique section identifier, string
         seg_name_a, seg_name_b: names of segmentations to be compared, string
         seg_a_path, seg_b_path: path to segmentation results, string
         save: whether to save the intermediary dataframe (useful if running functions individually), bool
+        savepath: path to which data should be saved. Defaults to seg_b_path if not specified.
         reuse_saved: load in the previously saved intermediary dataframe (useful if not making changes to segmentation metadata), bool, default True
         min_transcripts: minimum number of transcripts needed to define a cell too low quality to be considered for mapping
     RETURNS
@@ -94,9 +94,10 @@ def get_segmentation_data(barcode, seg_name_a, seg_name_b, anndata_a, anndata_b,
                 seg_h5ad = anndata_b
                 name = seg_name_b
             #sum across .X to get sum transcripts/cell > 40
-            high_quality_cells = [idx for idx, x in enumerate(seg_h5ad.X.sum(axis=1)) if x >= min_transcripts]
-            seg_h5ad.obs['low_quality_cells'] = [True]*len(seg_h5ad.obs)
-            seg_h5ad.obs.iloc[high_quality_cells, -1] = False
+            if 'low_quality_cells' not in seg_h5ad.obs.columns.tolist():
+                high_quality_cells = [idx for idx, x in enumerate(seg_h5ad.X.sum(axis=1)) if x >= min_transcripts]
+                seg_h5ad.obs['low_quality_cells'] = [True]*len(seg_h5ad.obs)
+                seg_h5ad.obs.iloc[high_quality_cells, -1] = False
             seg_h5ad.obs.loc[:, 'source'] = name
             #save only necessary columns
             if 'center_x' not in seg_h5ad.obs.columns.tolist():
@@ -104,8 +105,7 @@ def get_segmentation_data(barcode, seg_name_a, seg_name_b, anndata_a, anndata_b,
                 seg_h5ad.obs['center_y'] = seg_h5ad.obsm['spatial'][:,1]
             seg_df = seg_h5ad.obs[['center_x', 'center_y', 'source', 'low_quality_cells']]
             seg_dfs.append(seg_df)
-        seg_comp_df = pd.concat(seg_dfs, axis=0)
-        seg_comp_df.index = seg_comp_df.index.astype(str)
+        seg_comp_df = pd.concat(seg_dfs, axis=0).reset_index().rename(columns={'index':'original_idx_val'})
     if save:
         seg_comp_df.to_csv(savepath)
     return seg_comp_df
@@ -127,28 +127,31 @@ def get_mutual_matches(dfa, dfb, nn_dist):
     tree_b = cKDTree(dfb[["center_x", "center_y"]].copy())
     dists_b, inds_b = tree_b.query(dfa[['center_x', 'center_y']].copy(), 1) #vice versa
 
-    #get mutually matching pairs and save (index of seg_comp_df is str)
-    match_to_dfb = pd.DataFrame(data =dfa.iloc[inds_a].index.values.tolist(), 
-                            index=pd.Index(dfb.index, name='match_dfb_index'), 
-                            columns = ['match_dfa_index'])
-    match_to_dfb['same_cell'] = np.where(dists_a <= nn_dist, True, False)
-    match_to_dfa = pd.DataFrame(data = dfa.index,
-                                index=pd.Index(dfb.iloc[inds_b].index.values.tolist(), name='match_dfb_index'),
-                                columns = ['match_dfa_index'])
-    match_to_dfa['same_cell'] = np.where(dists_b <= nn_dist, True, False)
-    mutual_matches = pd.merge(match_to_dfa, match_to_dfb, how='outer')
-    mutual_matches = mutual_matches.set_index('match_dfa_index').join(match_to_dfa.reset_index().set_index('match_dfa_index'), how='left', rsuffix='_match')
-    mutual_match_dict = mutual_matches[mutual_matches['same_cell']==True].drop(['same_cell', 'same_cell_match'], axis=1).to_dict()
-    inv_mutual_match_dict = {v:k for k, v in mutual_match_dict['match_dfb_index'].items()}
-    # added union operwtor to dictionaries in 2020 for 3.9+ (pep 584), discussed https://stackoverflow.com/questions/38987/how-do-i-merge-two-dictionaries-in-a-single-expression-in-python
-    mutual_matches_stacked = mutual_match_dict['match_dfb_index'] | inv_mutual_match_dict
-    return mutual_matches_stacked
-
+    #matching pairs within nn dist of one another (index of seg_comp_df is str)
+    match_to_dfb = pd.DataFrame(data =dfa.iloc[inds_a].index.values.tolist(),  #gives me the index names from dfa (.loc searchable)
+                        index=pd.Index(dfb.index, name='match_dfb_index'), #gives me the index names from dfb, 
+                        columns = ['match_dfa_index'])
+    match_to_dfb['dists'] = dists_a
+    nn_dfb = match_to_dfb[match_to_dfb['dists']<=nn_dist]
+    nn_dfb_dict = nn_dfb['match_dfa_index'].to_dict() #this has dfa indexes to dfb indexes
+    
+    #above is dfb to dfa. repeat for dfa -> dfb
+    match_to_dfa = pd.DataFrame(data = dfb.iloc[inds_b].index.values.tolist(),
+                               index=pd.Index(dfa.index, name='match_dfa_index'),
+                               columns=['match_dfb_index'])
+    match_to_dfa['dists'] = dists_b
+    nn_dfa = match_to_dfa[match_to_dfa['dists']<=nn_dist]
+    nn_dfa_dict = nn_dfa['match_dfb_index'].to_dict() #this has dfb indexes to dfa indexes
+    
+    #find mutual matches
+    mut_matches = {k:v for k,v in nn_dfa_dict.items() if v in nn_dfb_dict.keys() and nn_dfb_dict[v] == k}  #so this is dfb:dfa
+    inv_mut_matches = {v:k for k,v in mut_matches.items()} #this is dfa:dfb (inverse of above)
+    return mut_matches, inv_mut_matches
 
 def collect_mutual_match_and_doublets(barcode, seg_name_a ='VPT', seg_name_b ='SIS', save = True, nn_dist = 2.5, reuse_saved= True,
-                                   seg_a_path = '//allen/programs/celltypes/workgroups/hct/emilyg/manuscript_23_completed_files/resegd_nas05_files/',
-                                   seg_b_path='/allen/programs/celltypes/workgroups/hct/emilyg/reseg_project/new_seg/', 
-                                   anndata_a=None, anndata_b=None, savepath=None, min_transcripts=40):
+                                      seg_a_path = '//allen/programs/celltypes/workgroups/hct/emilyg/manuscript_23_completed_files/resegd_nas05_files/',
+                                      seg_b_path='/allen/programs/celltypes/workgroups/hct/emilyg/reseg_project/new_seg/', 
+                                      anndata_a=None, anndata_b=None, savepath=None, min_transcripts=40):
     """
     Runs all relevant functions in required order, generating dataframe summarizing comparisons between two segmentations for a single section.
     INPUTS
@@ -163,7 +166,6 @@ def collect_mutual_match_and_doublets(barcode, seg_name_a ='VPT', seg_name_b ='S
     OUTPUTS:
         seg_comp_df: dataframe with unique index describing cell spatial locations (x and y), segmentation identifier, low quality cell identifier, mutual matches, and putative doublets. 
     """
-    
     if not savepath:
         savepath=seg_b_path
     #grab base comparison df
@@ -171,37 +173,42 @@ def collect_mutual_match_and_doublets(barcode, seg_name_a ='VPT', seg_name_b ='S
         seg_comp_df = get_segmentation_data(barcode, seg_name_a, seg_name_b, anndata_a, anndata_b, save, savepath, reuse_saved, min_transcripts)
     else:
         seg_comp_df = get_segmentation_data(barcode, seg_name_a, seg_name_b, seg_a_path, seg_b_path, save, reuse_saved, min_transcripts) 
-    
     #mutual matches with both segmentations filtered
-    dfa = seg_comp_df[(seg_comp_df['source']==seg_name_a)&(seg_comp_df['low_quality_cells']==False)]
-    dfb = seg_comp_df[(seg_comp_df['source']==seg_name_b)&(seg_comp_df['low_quality_cells']==False)]
+    dfa = seg_comp_df[(seg_comp_df['source']==seg_name_a)&(seg_comp_df['low_quality_cells']==False)].set_index('original_idx_val')
+    dfb = seg_comp_df[(seg_comp_df['source']==seg_name_b)&(seg_comp_df['low_quality_cells']==False)].set_index('original_idx_val')
     col_name_both_filt = 'match_'+seg_name_a+'_filt_'+seg_name_b+'_filt'
-    seg_comp_df[col_name_both_filt] = seg_comp_df.index.map(get_mutual_matches(dfa, dfb, nn_dist)) #filt both
+    mut_matches_sega, mut_matches_segb = get_mutual_matches(dfa, dfb, nn_dist)
+    seg_comp_df.loc[seg_comp_df['source']==seg_name_b, col_name_both_filt] = seg_comp_df.loc[seg_comp_df['source']==seg_name_b, 'original_idx_val'].map(mut_matches_segb)
+    seg_comp_df.loc[seg_comp_df['source']==seg_name_a, col_name_both_filt] = seg_comp_df.loc[seg_comp_df['source']==seg_name_a, 'original_idx_val'].map(mut_matches_sega)
     
     #mutual matches with seg a filtered only
-    dfa = seg_comp_df[(seg_comp_df['source']==seg_name_a)&(seg_comp_df['low_quality_cells']==False)]
-    dfb = seg_comp_df[seg_comp_df['source']==seg_name_b]
+    dfa = seg_comp_df[(seg_comp_df['source']==seg_name_a)&(seg_comp_df['low_quality_cells']==False)].set_index('original_idx_val')
+    dfb = seg_comp_df[seg_comp_df['source']==seg_name_b].set_index('original_idx_val')
     col_name_afilt = 'match_'+seg_name_a+'_filt_'+seg_name_b+'_unfilt'
-    seg_comp_df[col_name_afilt] = seg_comp_df.index.map(get_mutual_matches(dfa, dfb, nn_dist)) #a filt only
+    mut_matches_sega, mut_matches_segb = get_mutual_matches(dfa, dfb, nn_dist) #a filt only
+    seg_comp_df.loc[seg_comp_df['source']==seg_name_b, col_name_afilt] = seg_comp_df.loc[seg_comp_df['source']==seg_name_b, 'original_idx_val'].map(mut_matches_segb)
+    seg_comp_df.loc[seg_comp_df['source']==seg_name_a, col_name_afilt] = seg_comp_df.loc[seg_comp_df['source']==seg_name_a, 'original_idx_val'].map(mut_matches_sega)
 
     #mutual matches with seg b filtered only
-    dfa = seg_comp_df[seg_comp_df['source']==seg_name_a]
-    dfb = seg_comp_df[(seg_comp_df['source']==seg_name_b)&(seg_comp_df['low_quality_cells']==False)]
+    dfa = seg_comp_df[seg_comp_df['source']==seg_name_a].set_index('original_idx_val')
+    dfb = seg_comp_df[(seg_comp_df['source']==seg_name_b)&(seg_comp_df['low_quality_cells']==False)].set_index('original_idx_val')
     col_name_bfilt = 'match_'+seg_name_a+'_unfilt_'+seg_name_b+'_filt'
-    seg_comp_df[col_name_bfilt] = seg_comp_df.index.map(get_mutual_matches(dfa, dfb, nn_dist)) #b filt only
+    mut_matches_sega, mut_matches_segb = get_mutual_matches(dfa, dfb, nn_dist) #a filt only
+    seg_comp_df.loc[seg_comp_df['source']==seg_name_b, col_name_bfilt] = seg_comp_df.loc[seg_comp_df['source']==seg_name_b, 'original_idx_val'].map(mut_matches_segb)
+    seg_comp_df.loc[seg_comp_df['source']==seg_name_a, col_name_bfilt] = seg_comp_df.loc[seg_comp_df['source']==seg_name_a, 'original_idx_val'].map(mut_matches_sega)
+
 
     #find doublets
-    seg_comp_df['nota'] = seg_comp_df['match_VPT_filt_SIS_filt'].equals(seg_comp_df['match_VPT_filt_SIS_unfilt'])
-    seg_comp_df['notb']= seg_comp_df['match_VPT_filt_SIS_filt'].equals(seg_comp_df['match_VPT_unfilt_SIS_filt'])
-    seg_comp_df['putative doublets'] = ~(seg_comp_df['nota'] | seg_comp_df['notb'])
-    seg_comp_df.drop(['nota', 'notb'], axis=1, inplace=True)
+    # seg_comp_df['nota'] = seg_comp_df['match_'+seg_name_a+'_filt_'+seg_name_b+'_filt'].equals(seg_comp_df['match_'+seg_name_a+'_filt_'+seg_name_b+'_unfilt'])
+    # seg_comp_df['notb']= seg_comp_df['match_'+seg_name_a+'_filt_'+seg_name_b+'_filt'].equals(seg_comp_df['match_'+seg_name_a+'_unfilt_'+seg_name_b+'_filt'])
+    # seg_comp_df['putative doublets'] = ~(seg_comp_df['nota'] | seg_comp_df['notb'])
+    # seg_comp_df.drop(['nota', 'notb'], axis=1, inplace=True)
 
     #save results
     if save:
         seg_comp_df.to_csv(savepath+barcode+'_seg_comp_df_'+seg_name_a+'_and_'+seg_name_b+'_populated.csv', index= True)
         print('Saved to: '+savepath+barcode+'_seg_comp_df_'+seg_name_a+'_and_'+seg_name_b+'_populated.csv')
     return seg_comp_df
-
 
 def create_node_df_sankey(seg_comp_df, barcode, save=True, savepath = '/allen/programs/celltypes/workgroups/hct/emilyg/reseg_project/new_seg/'):
     """
@@ -213,15 +220,17 @@ def create_node_df_sankey(seg_comp_df, barcode, save=True, savepath = '/allen/pr
         savepath: path to which results should be saved, string
     OUTPUTS
         nodes_df: dataframe containing node label, color, and value for sankey diagram creation, with additional level and source keys for ease of link dataframe creation
+        unknown_unmatched_cells: dict of indexes for each segmentation where cells could not be found to have a match or reason for not matching.
     """
     
     color_dict = {seg_comp_df.source.unique().tolist()[0]: 'red', seg_comp_df.source.unique().tolist()[1]:'blue'}
     nodes_df = pd.DataFrame(columns = ['Label','Color', 'Level', 'Source', 'Value']) 
     unknown_unmatched_cells = {}
-
+    
     for source, g in seg_comp_df.groupby('source'):
         new_rows = []
         low_q_and_match = g.groupby('low_quality_cells').agg('count') # gives me low q t/f counts, and matched. 
+        display(low_q_and_match)
         total_cells = low_q_and_match.iloc[:,0].sum()
         nodes_df.loc[len(nodes_df)] = {'Label': 'total <br>'+str(total_cells), 'Color': color_dict[source], 
                                       'Level': 0, 'Source':source, 'Value': total_cells}
@@ -232,37 +241,37 @@ def create_node_df_sankey(seg_comp_df, barcode, save=True, savepath = '/allen/pr
                                       'Level': 1, 'Source':source, 'Value': low_q_and_match.iloc[0, 1]}
         #matched and unmatched cells
         #because row 1 in agg is false only! so false x low (normal) and false x match (unmatch!)
-        matched_cells = low_q_and_match.iloc[0,1] - low_q_and_match.iloc[0,3] 
-        nodes_df.loc[len(nodes_df)] = {'Label': 'matched cells <br>'+str(matched_cells),'Color': color_dict[source], 
-                                      'Level': 2, 'Source':source, 'Value': matched_cells}
-        nodes_df.loc[len(nodes_df)] = {'Label': 'unmatched cells <br>'+str(low_q_and_match.iloc[0, 3]),'Color': color_dict[source], 
-                                      'Level': 2, 'Source':source, 'Value': low_q_and_match.iloc[0, 3]}
+        unmatched_cells = low_q_and_match.iloc[0,1] - low_q_and_match.iloc[0,4] 
+        nodes_df.loc[len(nodes_df)] = {'Label': 'matched cells <br>'+str(low_q_and_match.iloc[0, 4]),'Color': color_dict[source], 
+                                      'Level': 2, 'Source':source, 'Value': low_q_and_match.iloc[0, 4]}
+        nodes_df.loc[len(nodes_df)] = {'Label': 'unmatched cells <br>'+str(unmatched_cells),'Color': color_dict[source], 
+                                      'Level': 2, 'Source':source, 'Value': unmatched_cells}
         #raise flag if too few cells matched, may indicate scaling issue
-        if matched_cells <= (.01*len(g)): 
+        if low_q_and_match.iloc[0, 4] <= (.01*len(g)): 
             raise ValueError('The number of matched cells is less than 1% of total cells present. Please check your inputs for potential scaling issues.')
         
-        rem_col_names = [x for x in g.columns[5:] if source+'_unfilt' not in x] #get remaining columns 
-        #pulling this to access unknown unmatched cells easily later
-        high_q_df = g[g[g.columns.tolist()[3]] == False]
-        unmatched_df = high_q_df[high_q_df[g.columns.tolist()[4]].isna() == False]
+        rem_col_names = [x for x in g.columns[6:] if source+'_unfilt' not in x] #get remaining columns 
+        # #column 3 is low qual (only normal qual), column 4 is both matched, want na = true for unmatched only
+        high_q_df = g[g[g.columns.tolist()[4]] == False]
+        unmatched_df = high_q_df[high_q_df[g.columns.tolist()[5]].isna() == True]
         rem_col_df = unmatched_df.loc[:, rem_col_names] 
         rem_col_counts= rem_col_df.isna().value_counts().reset_index()
         name = ' '.join(rem_col_names[0].split('_'))+ '<br>'
-        nodes_df.loc[len(nodes_df)] = {'Label': name+str(rem_col_counts.iloc[-1,2]),'Color': color_dict[source], 
-                                              'Level': 3, 'Source':source, 'Value': rem_col_counts.iloc[-1,2]}
+        nodes_df.loc[len(nodes_df)] = {'Label': name+str(rem_col_counts.iloc[0,1]),'Color': color_dict[source], 
+                                       'Level': 3, 'Source':source, 'Value': rem_col_counts.iloc[0,1]}
         # remaining unmatched cells (known or unknown)
-        if len(rem_col_counts) > 1:
-            rem_unmatched_cells = rem_col_counts.iloc[1, 2]
-            if rem_col_counts.loc[:, rem_col_names[-1]].unique() == False: #if no remaining cells
-                name = 'unknown unmatched '+source+' cells <br>'
-                unknown_unmatched_cells[source] = rem_col_df[rem_col_df[rem_col_names[0]].isna()==True].index.values.tolist()
-            else:
-                name = ' '.join(rem_col_names[-1].split('_'))
+        if len(rem_col_counts) > 1: #still unmatched cells
+            rem_unmatched_cells = rem_col_counts.iloc[1, 1]
+            # if rem_col_counts.loc[:, rem_col_names[-1]].unique() == False: #if no remaining cells
+            name = 'unknown unmatched '+source+' cells <br>'
+            unknown_unmatched_cells[source] = rem_col_df[rem_col_df[rem_col_names[0]].isna()==True].index.values.tolist()
+            # else:
+            #     name = ' '.join(rem_col_names[-1].split('_'))
             nodes_df.loc[len(nodes_df)] = {'Label': name+str(rem_unmatched_cells),'Color': color_dict[source], 
                                 'Level': 3, 'Source':source, 'Value': rem_unmatched_cells}
     if save:
         nodes_df.to_csv(savepath+'/sankey_nodes_df'+barcode+'.csv')
-    return nodes_df
+    return nodes_df, unknown_unmatched_cells
 
 
 def create_link_df_sankey(nodes_df, barcode, save=True, savepath='/allen/programs/celltypes/workgroups/hct/emilyg/reseg_project/new_seg/'):
@@ -318,6 +327,7 @@ def generate_sankey_diagram(seg_comp_df, barcode, save=True, savepath='/allen/pr
         savepath: path to which results should be saved, string   
     OUTPUTS
         fig: sankey diagram figure
+        unknown_unmatched_cells: dict of indexes for each segmentation where cells could not be found to have a match or reason for not matching.
     """
     nodes_df, unknown_unmatched_cells = create_node_df_sankey(seg_comp_df, barcode, save, savepath)
     links_df = create_link_df_sankey(nodes_df, barcode, save, savepath)
@@ -376,4 +386,4 @@ def scaling_check(seg_comp_df):
     subs_b = filtered_seg_b_df[(filtered_seg_b_df['center_x'].between(x_range[0], x_range[1]))&(filtered_seg_b_df['center_y'].between(y_range[0], y_range[1]))]
     subs_b.plot('center_x', 'center_y', kind='scatter', s=.5, label=seg_names[1], ax=ax, color='red', alpha=0.5)
     plt.axis('equal')
-
+    
