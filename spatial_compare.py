@@ -365,25 +365,27 @@ class SpatialCompare():
         filtered_seg_a_df.plot('center_x', 'center_y', kind='scatter', s=.1, label='high quality cells '+self.data_names[0], 
                                ax=ax, color='blue', alpha=0.5)
         filtered_seg_b_df = seg_comp_df[(seg_comp_df['source']==self.data_names[1])&(seg_comp_df['low_quality_cells']==False)]
-        filtered_seg_b_df.plot('center_x', 'center_y', kind='scatter', s=.1, label='high quality cells '+self.data_names[1], 
+        filtered_seg_b_df.plot('center_x', 'center_y', kind='scatter', s=.3, label='high quality cells '+self.data_names[1], 
                                ax=ax, color='red', alpha=0.5)
+        plt.title('Both segmentations, overlaid')
         plt.axis('equal')
     
         #find center of one section to zoom in on
         arr = filtered_seg_a_df[['center_x', 'center_y']].values
         center = [np.mean(arr[:,0]), np.mean(arr[:,1])]
-        x_range = [center[0] - center[0]*.1, center[0]+  center[0]*.1]
-        y_range = [center[1] - center[1]*.1, center[1]+  center[1]*.1]
+        x_range = [center[0] - center[0]*.05, center[0]+ center[0]*.05]
+        y_range = [center[1] - center[1]*.05, center[1]+ center[1]*.05]
         
         #plot same area for both sections
         fig, ax = plt.subplots()
         filtered_seg_a_df = seg_comp_df[(seg_comp_df['source']==self.data_names[0])&(seg_comp_df['low_quality_cells']==False)]
         subs_a = filtered_seg_a_df[(filtered_seg_a_df['center_x'].between(x_range[0], x_range[1]))&(filtered_seg_a_df['center_y'].between(y_range[0], y_range[1]))]
-        subs_a.plot('center_x', 'center_y', kind='scatter', s=.5, label= self.data_names[0], ax=ax, color='blue', alpha=0.5)
-        
+        subs_a.plot('center_x', 'center_y', kind='scatter', s=2, label= self.data_names[0], ax=ax, color='blue', alpha=0.5)
+        plt.title('Both segmentations, overlaid')
         filtered_seg_b_df = seg_comp_df[(seg_comp_df['source']==self.data_names[1])&(seg_comp_df['low_quality_cells']==False)]
         subs_b = filtered_seg_b_df[(filtered_seg_b_df['center_x'].between(x_range[0], x_range[1]))&(filtered_seg_b_df['center_y'].between(y_range[0], y_range[1]))]
-        subs_b.plot('center_x', 'center_y', kind='scatter', s=.5, label=self.data_names[1], ax=ax, color='red', alpha=0.5)
+        subs_b.plot('center_x', 'center_y', kind='scatter', s=10, label=self.data_names[1], ax=ax, facecolors='none', edgecolors='r', alpha=0.5)
+        plt.title('Both segmentations, overlaid, zoomed in to center')
         plt.axis('equal')
         return
 
