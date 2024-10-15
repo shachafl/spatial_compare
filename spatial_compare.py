@@ -6,19 +6,21 @@ import pandas as pd
 import scanpy as sc
 import seaborn as sns
 from scipy import sparse
-from scanpy import read_h5ad
 from scipy.spatial import cKDTree
 from pathlib import Path
 import plotly.graph_objs as go
 from matplotlib.ticker import FormatStrFormatter
 import warnings
 
+
 DEFAULT_DATA_NAMES=["Data 0", "Data 1"]
+
+          
 
 class SpatialCompare():
     def __init__(self, ad_0:ad.AnnData, ad_1:ad.AnnData, 
                 data_names=DEFAULT_DATA_NAMES,
-                obsm_key="spatial_cirro_grid",  #adjust obsm default to whatever is in the ad objects
+                obsm_key="spatial_cirro_grid", 
                 category="subclass",
                 ):
         
@@ -30,7 +32,7 @@ class SpatialCompare():
         self.ad_0 = ad_0
         self.ad_1 = ad_1
        
-        #validate spatial key in obsm - 
+        #validate spatial key in obsm
         if obsm_key not in self.ad_0.obsm.keys() or obsm_key not in self.ad_1.obsm.keys():
             raise ValueError(" obsm key "+obsm_key+" is not in both input AnnData objects")    
         
@@ -56,8 +58,13 @@ class SpatialCompare():
         self.shared_genes = list(set(self.ad_0.var.index)&set(self.ad_1.var.index))
         print("input anndata objects have "+str(len(self.shared_genes))+ " shared genes")
 
+
+
+
         self.can_compare = True
+
         self.data_names = data_names
+
         self.spatial_compare_results = None
 
 
@@ -70,7 +77,6 @@ class SpatialCompare():
         self.category = category 
         self.can_compare = True
 
-        
     def spatial_plot(self, plot_legend=True,min_cells_to_plot = 10, decimate_for_spatial_plot=1,figsize=[20,10], category_values=[]):
 
         plt.figure(figsize=figsize)
@@ -112,6 +118,7 @@ class SpatialCompare():
         self.can_compare = True
         self.category = "matched_leiden_clusters"
         return True
+
 
 
     def find_matched_groups(self,
@@ -243,8 +250,10 @@ class SpatialCompare():
         detection_ratio_plots(gene_ratio_dataframe,
                               data_names=self.data_names, figsize=figsize)
 
-    
+ 
+
     def spatial_compare(self, **kwargs):
+
         if "category" in kwargs.keys():
             self.set_category(kwargs["category"])
 
@@ -388,7 +397,6 @@ class SpatialCompare():
         plt.title('Both segmentations, overlaid, zoomed in to center')
         plt.axis('equal')
         return
-
 
 
 def filter_and_cluster_twice(input_ad, n_hvgs=2000, 
@@ -620,6 +628,10 @@ def get_column_ordering(df, ordered_rows):
             if len(r_columns)>0 and len(flat_ordering)<df.shape[1]:
                 empty_columns[r].append(r_columns[0])
                 flat_ordering.append(r_columns[0])
+                
+    output=[]
+    [output.extend(empty_columns[k]) for k in empty_columns]
+    return output
 
 def transcripts_per_cell(cell_x_gene):
     return cell_x_gene.sum(axis=1).to_numpy()
@@ -644,7 +656,7 @@ def create_seg_comp_df(barcode, seg_name, base_path, min_transcripts):
         metadata = pd.read_table(str(seg_path)+'/cellpose_metadata.csv', index_col=0, sep=',')
     else:
         cxg = pd.read_table(str(seg_path)+'/cell_by_gene.csv', index_col=0, sep=',')
-        meta = read_h5ad(str(seg_path)+'/metadata.h5ad')
+        meta = ad.read_h5ad(str(seg_path)+'/metadata.h5ad')
         metadata = meta.obs
     
     #assemble seg df with filt cells col, xy cols, and seg name
@@ -736,9 +748,6 @@ def get_mutual_matches(dfa, dfb, nn_dist):
     mutual_matches_stacked = mutual_match_dict['match_dfb_index'] | inv_mutual_match_dict
     return mutual_matches_stacked
                 
-    # output=[]
-    # [output.extend(empty_columns[k]) for k in empty_columns]
-    # return output
 
 def create_node_df_sankey(seg_comp_df, barcode, save=True, savepath = '/allen/programs/celltypes/workgroups/hct/emilyg/reseg_project/new_seg/'):
     """

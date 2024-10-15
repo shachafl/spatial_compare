@@ -1,1 +1,1 @@
-from .spatial_compare import spatial_compare, find_matched_groups, filter_and_cluster, get_column_ordering, generate_label_confusion
+from .spatial_compare import spatial_compare, find_matched_groups, detection_ratio_plots
