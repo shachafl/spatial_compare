@@ -14,15 +14,6 @@ setuptools.setup(
         "igraph",
         "leidenalg"
     ],
-    install_requires=[
-        "anndata",
-        "jupyter",
-        "seaborn",
-        "scanpy",
-        "scipy",
-        "igraph",
-        "leidenalg"
-    ],
     include_package_data=True,
     version="0.2",
     python_requires=">=3.9"
