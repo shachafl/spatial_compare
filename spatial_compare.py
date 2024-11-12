@@ -594,7 +594,7 @@ def get_column_ordering(df, ordered_rows):
 
 
 def spatial_detection_scores(reference: pd.DataFrame, query: pd.DataFrame,
-                              plot_stuff=True,query_name: str="query data",
+                              plot_stuff=True,query_name: str="query data",comparison_column="transcript_counts",
                               category = "supercluster_name",
                               n_bins = 50, in_place=True, non_spatial = False):
     """
@@ -620,7 +620,6 @@ def spatial_detection_scores(reference: pd.DataFrame, query: pd.DataFrame,
 
 
     shared_category_values = list(set(reference[category].unique())& set(query[category].unique()))
-    
     if (len(shared_category_values)<query[category].unique().shape[0] or 
         len(shared_category_values)<reference[category].unique().shape[0]):
         in_place=False
@@ -637,9 +636,9 @@ def spatial_detection_scores(reference: pd.DataFrame, query: pd.DataFrame,
 
 
 
-    means=s1.groupby(category, observed=True).total_counts.mean()
-    stds = s1.groupby(category, observed=True).total_counts.std()
-    
+    means=s1.groupby(category, observed=True)[comparison_column].mean()
+    stds = s1.groupby(category, observed=True)[comparison_column].std()
+
     # if you want to compare to an ungrouped mean/std, try this:
     if non_spatial:
         means[:] = means.mean()
@@ -653,9 +652,10 @@ def spatial_detection_scores(reference: pd.DataFrame, query: pd.DataFrame,
     for c,gb in s2.groupby(category, observed=True):
         if c not in shared_category_values:
             continue
-        s2.loc[s2[category]==c,["detection_relative_z_score"]]= ( (s2.loc[s2[category]==c,["total_counts"]] - means[c])/stds[c]).values
-        s2.loc[s2[category]==c,["detection_difference"]]=  (s2.loc[s2[category]==c,["total_counts"]] - means[c]).values
-        s2.loc[s2[category]==c,["log_10_detection_ratio"]]=  np.log10((s2.loc[s2[category]==c,["total_counts"]] / means[c]).values)
+
+        s2.loc[s2[category]==c,["detection_relative_z_score"]] = ( (s2.loc[s2[category]==c,[comparison_column]] - means[c])/stds[c]).values
+        s2.loc[s2[category]==c,["detection_difference"]]=  (s2.loc[s2[category]==c,[comparison_column]] - means[c]).values
+        s2.loc[s2[category]==c,["log_10_detection_ratio"]]=  np.log10((s2.loc[s2[category]==c,[comparison_column]] / means[c]).values)
     
     
     s2["xy_bucket"] = list(zip(pd.cut(s2.x_centroid, n_bins, labels=list(range(n_bins))),
@@ -667,19 +667,22 @@ def spatial_detection_scores(reference: pd.DataFrame, query: pd.DataFrame,
     z_score = s2.groupby("xy_bucket").detection_relative_z_score.mean()
     difference = s2.groupby("xy_bucket").detection_difference.mean()
     log_ratio = s2.groupby("xy_bucket").log_10_detection_ratio.mean()
-
+    n_cells = s2.groupby("xy_bucket").x_centroid.count()
 
     
     bin_image_z_score= np.zeros([n_bins,n_bins])
     bin_image_difference= np.zeros([n_bins,n_bins])
     bin_image_ratio= np.zeros([n_bins,n_bins])
+    bin_image_counts = np.zeros([n_bins,n_bins])
 
     extent = [np.min(binx), np.max(binx),np.min(biny),np.max(biny)]
     for coord in binx.index:
         bin_image_z_score[coord[1],coord[0]] = z_score[coord]
         bin_image_difference[coord[1],coord[0]] = difference[coord]
         bin_image_ratio[coord[1],coord[0]] = log_ratio[coord]
+        bin_image_counts[coord[1],coord[0]]= n_cells[coord]
 
+    
     if plot_stuff:
         if non_spatial:
             title_string = "Non-spatial Detection Scores"
@@ -708,6 +711,7 @@ def spatial_detection_scores(reference: pd.DataFrame, query: pd.DataFrame,
                 difference_image=bin_image_difference,
                 ratio_image=bin_image_ratio,
                 extent = extent,
+                count_image = bin_image_counts,
                 query=True,reference=True)
 
     else:
@@ -715,5 +719,6 @@ def spatial_detection_scores(reference: pd.DataFrame, query: pd.DataFrame,
                 difference_image=bin_image_difference,
                 ratio_image=bin_image_ratio,
                 extent = extent,
+                count_image = bin_image_counts,
                 query=s2,reference=s1)
                 
