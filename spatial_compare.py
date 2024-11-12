@@ -722,3 +722,137 @@ def spatial_detection_scores(reference: pd.DataFrame, query: pd.DataFrame,
                 count_image = bin_image_counts,
                 query=s2,reference=s1)
                 
+            
+
+def summarize_and_plot(spatial_density_results, min_cells_per_bin = 50, z_score_limit = -0.5,
+                        area_frac_limit = 0.1,figsize=[15,15], plot_columns=9,
+                        plot_stuff = True, title_mapping={}):
+    """
+    Summarizes and plots spatial density results.
+    Parameters:
+    - spatial_density_results (dict): A dictionary containing spatial density results.
+    - min_cells_per_bin (int): The minimum number of cells per bin. Default is 50.
+    - z_score_limit (float): The z-score limit. Default is -0.5.
+    - area_frac_limit (float): The area fraction limit. Default is 0.1.
+    - figsize (list): The figure size. Default is [15, 15].
+    - plot_columns (int): The number of plot columns in figure subplot. Default is 9.
+    - plot_stuff (bool): Whether to plot the results. Default is True.
+    - title_mapping (dict): A dictionary mapping spatial_density_results keys to titles for the plots. Default is an empty dictionary.
+    Returns:
+    - results (list): A list of dictionaries containing the summarized results. Each dictionary contains the following keys:
+        - key (float): same as original input key
+        - bad_frac (float): The fraction of tissue bins with z-scores below the z-score limit.
+        - area_frac_limit (float): The area fraction limit.
+        - failed (bool): Whether the fraction of tissue bins with z-scores below the z-score limit is greater than or equal to the area fraction limit.
+        - mean (float): The mean of the non-zero z-scores.
+        - stdev (float): The standard deviation of the non-zero z-scores.
+    """
+
+
+    fails_vs_rnaseq = []
+    results=[]
+    if plot_stuff:
+        plt.figure(figsize=figsize)
+
+    for ii,z in enumerate(sorted(list(spatial_density_results.keys()))):
+        #estimate tissue bins:
+        tissue_bins = spatial_density_results[z]["count_image"]>min_cells_per_bin
+        bad_frac = np.sum(spatial_density_results[z]["z_score_image"][tissue_bins]<=z_score_limit)/np.sum(tissue_bins)
+        image_to_show = spatial_density_results[z]["z_score_image"].copy()
+        image_to_show[np.logical_not(tissue_bins)]=0
+
+        
+        if plot_stuff:
+            if z in title_mapping:
+                title_prefix = title_mapping[z]
+            else:
+                title_prefix=""
+                
+            plt.subplot(1+len(list(spatial_density_results.keys()))//plot_columns,plot_columns, ii+1)
+
+            ax = plt.imshow(image_to_show, vmin = -1, vmax=1, extent = spatial_density_results[z]["extent"], cmap = 'coolwarm_r')
+        
+            if bad_frac>=area_frac_limit:
+                plt.title(title_prefix+" Fail", fontdict={"size":12})
+            else:
+                plt.title(title_prefix, fontdict={"size":12})
+            plt.xticks([])
+            plt.yticks([])
+            
+        if bad_frac>=area_frac_limit:
+            fails_vs_rnaseq.append(z)
+
+        results.append(dict(key=z,
+                            bad_frac=bad_frac,
+                            area_frac_limit = area_frac_limit,
+                            failed = bad_frac>=area_frac_limit,
+                            mean = np.mean(image_to_show[image_to_show!=0]),
+                           stdev = np.std(image_to_show[image_to_show!=0])))
+    return results
+
+
+def compare_reference_and_spatial(reference_anndata,spatial_anndata, 
+                                  category="MTG_subclass_name", layer_field = None, 
+                                  plot_stuff=True,
+                                  target_obs_key = "comparison_transcript_counts", ok_to_clobber=False):
+    """
+    Compare reference and spatial data based on a specified category.
+    Parameters:
+    - reference_anndata (AnnData): Annotated data matrix containing the reference data.
+    - spatial_anndata (AnnData): Annotated data matrix containing the spatial data.
+    - category (str): The category to compare the data on. Default is "MTG_subclass_name".
+    - layer_field (str): The field to use for layer-based comparison. Default is None.
+    - plot_stuff (bool): Whether to plot the comparison results. Default is True.
+    - target_obs_key (str): The key to use for storing the comparison transcript counts. Default is "comparison_transcript_counts".
+    - ok_to_clobber (bool): Whether it is okay to overwrite the target_obs_key in the reference_anndata. Default is False.
+    Raises:
+    - ValueError: If the target_obs_key already exists in the reference_anndata and ok_to_clobber is False.
+    Returns:
+    - None
+    """
+    if target_obs_key in reference_anndata.obs.columns:
+        if not ok_to_clobber == True:
+            raise ValueError("obs key "+target_obs_key+" is already in the input reference .obs\n If desired, set ok_to_clobber to True")
+        else:
+            print("warning: modifying input reference anndata .obs field "+target_obs_key)
+
+    if layer_field is not None:
+        reference_anndata.obs[target_obs_key] = np.sum(reference_anndata.layers[layer_field],axis=1)
+    else:
+        reference_anndata.obs[target_obs_key] = np.sum(reference_anndata.X,axis=1)
+
+    
+    means = reference_anndata.obs.loc[:,[category,target_obs_key]].groupby(category, observed=True).mean()
+    means["spatial_counts"] = 0.0
+
+
+    for name in spatial_anndata.obs[category].unique():
+        means.loc[name,["spatial_counts"]] = spatial_anndata.obs.loc[spatial_anndata.obs[category]==name,[target_obs_key]].mean().values[0]
+
+
+
+    fit_values = np.polyfit(means.spatial_counts,means[target_obs_key], 1)
+
+    scale_factor = 1/fit_values[0]
+    if plot_stuff:
+        plt.figure()
+        plt.plot(means.spatial_counts, means[target_obs_key],'.')
+        plt.xlabel("spatial counts")
+        plt.ylabel(target_obs_key+" in reference anndata")
+        plt.figure()
+        sns.regplot(x=means.spatial_counts, y=scale_factor*means[target_obs_key])
+        plt.plot([0,1000],[0,1000], label="unity") 
+        #plt.plot(means.spatial_counts, means.spatial_counts*fit_values[0]+fit_values[1], label = "fit")
+        plt.ylabel("scaled reference data")
+        plt.title("\n scale = "+str(scale_factor)[:6])
+        plt.legend()
+        
+
+    
+    
+   
+    # scale transcript counts based on the linear fit.
+    # could also do this per group.
+
+    reference_anndata.obs[target_obs_key] = scale_factor*reference_anndata.obs[target_obs_key]
+
