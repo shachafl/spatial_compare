@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.pip-compile]
+generate-hashes = true
+allow-unsafe = false
+
+[tool.pip-compile.dependencies]
+python = "^3.9"
+
+
+[project]
+name = "spatial_compare"
+version = "0.1"
+description = "A package for comparing spatial transcriptomics datasets"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{name = "Allen Institute for Brain Science", email = "brianl@alleninstitute.org"}]
+license = {file = "LICENSE"}
+dependencies = [
+        "anndata",
+        "jupyter",
+        "seaborn",
+        "scanpy",
+        "scipy",
+        "igraph",
+        "leidenalg"
+    ]
+
+[project.urls]
+Homepage = "https://github.com/berl/spatial_compare"
+Changelog = "https://github.com/berl/spatial_compare/releases"
+Issues = "https://github.com/berl/spatial_compare/issues"
+CI = "https://github.com/berl/spatial_compare/actions"
+
+
+[project.optional-dependencies]
+test = ["pytest"]
