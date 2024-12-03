@@ -1,1 +1,1 @@
-from .spatial_compare import spatial_compare, find_matched_groups, detection_ratio_plots
+from .spatial_compare import SpatialCompare, spatial_detection_scores, compare_reference_and_spatial,summarize_and_plot
