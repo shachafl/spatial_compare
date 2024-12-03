@@ -1,6 +1,9 @@
 
 `Spatial_Compare`
-Comparison of spatial experiments based on matched groups. 
+
+Comparison of spatial experiments based on matched labels. 
+
+<img width="231" alt="image" src="https://github.com/user-attachments/assets/b6f6d35b-87b1-4af8-a770-308d4454b6f6">
 
 _Not fancy, helpful_ &#8482;.
 
