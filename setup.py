@@ -12,7 +12,8 @@ setuptools.setup(
         "scanpy",
         "scipy",
         "igraph",
-        "leidenalg"
+        "leidenalg",
+        "plotly==5.24.1",
     ],
     include_package_data=True,
     version="0.2",

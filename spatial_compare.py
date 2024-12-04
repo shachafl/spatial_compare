@@ -400,7 +400,7 @@ class SpatialCompare():
             print('Saved to: '+savepath+bc+'_seg_comp_df_'+self.data_names[0]+'_and_'+self.data_names[1]+'_populated.csv')
         return seg_comp_df
 
-    def generate_sankey_diagram(self, seg_comp_df, bc, save=True, savepath='/allen/programs/celltypes/workgroups/hct/emilyg/reseg_project/new_seg/'):
+    def generate_sankey_diagram(self, seg_comp_df, bc, save=True, savepath='/allen/programs/celltypes/workgroups/hct/emilyg/'):
         """
         Creates sankey diagram comparing two segmentation results using segmentation comparison dataframe created by collect_mutual_match_and_doublets function
         INPUTS
@@ -428,11 +428,12 @@ class SpatialCompare():
         
         layout = dict(title = "Cell segmentation comparison human "+bc+' '+self.data_names[0]+' vs '+self.data_names[1], height = 772, font = dict(size = 10))
         fig = go.Figure(dict(data=[data_trace], layout=layout))
-        fig.show()
         #save interactive file
         if save:
-            fig.write_html(savepath+"/segmentation_comparison_"+bc+"_"+self.data_names[0]+'_'+self.data_names[1]+".html")
-        return fig, unknown_unmatched_cells
+            filepath = savepath+"/segmentation_comparison_"+bc+"_"+self.data_names[0]+'_'+self.data_names[1]+'.html'
+            fig.write_html(filepath)
+        fig.show()
+        return fig, unknown_unmatched_cells, filepath
 
     def scaling_check(self, seg_comp_df):
         """

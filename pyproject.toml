@@ -25,7 +25,8 @@ dependencies = [
         "scanpy",
         "scipy",
         "igraph",
-        "leidenalg"
+        "leidenalg",
+        "plotly",
     ]
 
 [project.urls]
