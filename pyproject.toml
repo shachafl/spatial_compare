@@ -27,6 +27,7 @@ dependencies = [
         "igraph",
         "leidenalg",
         "plotly",
+        "kaleido",
     ]
 
 [project.urls]

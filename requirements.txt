@@ -176,6 +176,8 @@ jupyterlab-server==2.27.3
     #   notebook
 jupyterlab-widgets==3.0.13
     # via ipywidgets
+kaleido==0.2.1
+    # via spatial_compare (setup.py)
 kiwisolver==1.4.5
     # via matplotlib
 legacy-api-wrap==1.4
