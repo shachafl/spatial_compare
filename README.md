@@ -1,10 +1,9 @@
 
-<p style="text-align: center;">`Spatial_Compare`</p>
+`Spatial_Compare`
 
-<p style="text-align: center;">_work in progress!_</p>
+_work in progress!_
 
-
-<p style="text-align: center;">_this package is in development and currently unsupported_</p>
+_this package is in development and currently unsupported_
 
 
 Comparison of spatial experiments based on matched labels. 
