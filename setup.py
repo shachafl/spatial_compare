@@ -12,7 +12,9 @@ setuptools.setup(
         "scanpy",
         "scipy",
         "igraph",
-        "leidenalg"
+        "leidenalg",
+        "plotly",
+        "kaleido",
     ],
     include_package_data=True,
     version="0.2",
