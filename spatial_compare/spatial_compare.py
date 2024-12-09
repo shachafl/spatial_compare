@@ -557,7 +557,15 @@ class SpatialCompare:
         )
         return True
 
-    def collect_mutual_match_and_doublets(self, bc, save = True, nn_dist = 2.5, reuse_saved= True, savepath=None, min_transcripts=40):
+    def collect_mutual_match_and_doublets(
+        self,
+        bc,
+        save=True,
+        nn_dist=2.5,
+        reuse_saved=True,
+        savepath=None,
+        min_transcripts=40,
+    ):
         """
         Runs all relevant functions in required order, generating dataframe summarizing comparisons between two segmentations for a single section.
         INPUTS
@@ -568,69 +576,150 @@ class SpatialCompare:
         min_transcripts: minimum number of transcripts needed to define a cell too low quality to be considered for mapping
         savepath: path to which you'd like to save your results. Required if using anndata objects and save = True, otherwise defaults to seg_b_path
         OUTPUTS:
-        seg_comp_df: dataframe with unique index describing cell spatial locations (x and y), segmentation identifier, low quality cell identifier, mutual matches, and putative doublets. 
+        seg_comp_df: dataframe with unique index describing cell spatial locations (x and y), segmentation identifier, low quality cell identifier, mutual matches, and putative doublets.
         """
-        
+
         if not savepath:
-            savepath=seg_b_path
-        #grab base comparison df
-        seg_comp_df = get_segmentation_data(bc, self.ad_0, self.ad_1, self.data_names[0], self.data_names[1], save, savepath, reuse_saved, min_transcripts)
-        
-        #mutual matches with both segmentations filtered
-        dfa = seg_comp_df[(seg_comp_df['source']==self.data_names[0])&(seg_comp_df['low_quality_cells']==False)]
-        dfb = seg_comp_df[(seg_comp_df['source']==self.data_names[1])&(seg_comp_df['low_quality_cells']==False)]
-        col_name_both_filt = 'match_'+self.data_names[0]+'_filt_'+self.data_names[1]+'_filt'
-        seg_comp_df[col_name_both_filt] = seg_comp_df.index.map(get_mutual_matches(dfa, dfb, nn_dist)) #filt both
-        
-        #mutual matches with seg a filtered only
-        dfa = seg_comp_df[(seg_comp_df['source']==self.data_names[0])&(seg_comp_df['low_quality_cells']==False)]
-        dfb = seg_comp_df[seg_comp_df['source']==self.data_names[1]]
-        col_name_afilt = 'match_'+self.data_names[0]+'_filt_'+self.data_names[1]+'_unfilt'
-        seg_comp_df[col_name_afilt] = seg_comp_df.index.map(get_mutual_matches(dfa, dfb, nn_dist)) #a filt only
-        
-        #mutual matches with seg b filtered only
-        dfa = seg_comp_df[seg_comp_df['source']==self.data_names[0]]
-        dfb = seg_comp_df[(seg_comp_df['source']==self.data_names[1])&(seg_comp_df['low_quality_cells']==False)]
-        col_name_bfilt = 'match_'+self.data_names[0]+'_unfilt_'+self.data_names[1]+'_filt'
-        seg_comp_df[col_name_bfilt] = seg_comp_df.index.map(get_mutual_matches(dfa, dfb, nn_dist)) #b filt only
-        
-        #save results
+            savepath = seg_b_path
+        # grab base comparison df
+        seg_comp_df = get_segmentation_data(
+            bc,
+            self.ad_0,
+            self.ad_1,
+            self.data_names[0],
+            self.data_names[1],
+            save,
+            savepath,
+            reuse_saved,
+            min_transcripts,
+        )
+
+        # mutual matches with both segmentations filtered
+        dfa = seg_comp_df[
+            (seg_comp_df["source"] == self.data_names[0])
+            & (seg_comp_df["low_quality_cells"] == False)
+        ]
+        dfb = seg_comp_df[
+            (seg_comp_df["source"] == self.data_names[1])
+            & (seg_comp_df["low_quality_cells"] == False)
+        ]
+        col_name_both_filt = (
+            "match_" + self.data_names[0] + "_filt_" + self.data_names[1] + "_filt"
+        )
+        seg_comp_df[col_name_both_filt] = seg_comp_df.index.map(
+            get_mutual_matches(dfa, dfb, nn_dist)
+        )  # filt both
+
+        # mutual matches with seg a filtered only
+        dfa = seg_comp_df[
+            (seg_comp_df["source"] == self.data_names[0])
+            & (seg_comp_df["low_quality_cells"] == False)
+        ]
+        dfb = seg_comp_df[seg_comp_df["source"] == self.data_names[1]]
+        col_name_afilt = (
+            "match_" + self.data_names[0] + "_filt_" + self.data_names[1] + "_unfilt"
+        )
+        seg_comp_df[col_name_afilt] = seg_comp_df.index.map(
+            get_mutual_matches(dfa, dfb, nn_dist)
+        )  # a filt only
+
+        # mutual matches with seg b filtered only
+        dfa = seg_comp_df[seg_comp_df["source"] == self.data_names[0]]
+        dfb = seg_comp_df[
+            (seg_comp_df["source"] == self.data_names[1])
+            & (seg_comp_df["low_quality_cells"] == False)
+        ]
+        col_name_bfilt = (
+            "match_" + self.data_names[0] + "_unfilt_" + self.data_names[1] + "_filt"
+        )
+        seg_comp_df[col_name_bfilt] = seg_comp_df.index.map(
+            get_mutual_matches(dfa, dfb, nn_dist)
+        )  # b filt only
+
+        # save results
         if save:
-            seg_comp_df.to_csv(savepath+bc+'_seg_comp_df_'+self.data_names[0]+'_and_'+self.data_names[1]+'_populated.csv', index= True)
-            print('Saved to: '+savepath+bc+'_seg_comp_df_'+self.data_names[0]+'_and_'+self.data_names[1]+'_populated.csv')
+            seg_comp_df.to_csv(
+                savepath
+                + bc
+                + "_seg_comp_df_"
+                + self.data_names[0]
+                + "_and_"
+                + self.data_names[1]
+                + "_populated.csv",
+                index=True,
+            )
+            print(
+                "Saved to: "
+                + savepath
+                + bc
+                + "_seg_comp_df_"
+                + self.data_names[0]
+                + "_and_"
+                + self.data_names[1]
+                + "_populated.csv"
+            )
         return seg_comp_df
 
-    def generate_sankey_diagram(self, seg_comp_df, bc, save=True, savepath='/allen/programs/celltypes/workgroups/hct/emilyg/'):
+    def generate_sankey_diagram(
+        self,
+        seg_comp_df,
+        bc,
+        save=True,
+        savepath="/allen/programs/celltypes/workgroups/hct/emilyg/",
+    ):
         """
         Creates sankey diagram comparing two segmentation results using segmentation comparison dataframe created by collect_mutual_match_and_doublets function
         INPUTS
-            seg_comp_df: dataframe with unique index describing cell spatial locations (x and y), segmentation identifier, low quality cell identifier, mutual matches, and putative doublets. 
+            seg_comp_df: dataframe with unique index describing cell spatial locations (x and y), segmentation identifier, low quality cell identifier, mutual matches, and putative doublets.
             bc: unique identifier for section, used for creating the save name for the dataframe, string.
             save: whether to save the final results. Bool, default true
-            savepath: path to which results should be saved, string   
+            savepath: path to which results should be saved, string
         OUTPUTS
             fig: sankey diagram figure
         """
-        nodes_df, unknown_unmatched_cells = create_node_df_sankey(seg_comp_df, bc, save, savepath)
+        nodes_df, unknown_unmatched_cells = create_node_df_sankey(
+            seg_comp_df, bc, save, savepath
+        )
         links_df = create_link_df_sankey(nodes_df, bc, save, savepath)
         # Sankey plot setup
-        data_trace = dict(type='sankey',node = dict(line = dict(color = "black",width = 0),
-                                                    label =  nodes_df['Label'].dropna(axis=0, how='any'),
-                                                    color = nodes_df['Color']
-                                                   ),
-                          link = dict(
-                              source = links_df['Source'].dropna(axis=0, how='any'),
-                              target = links_df['Target'].dropna(axis=0, how='any'),
-                              value = links_df['Value'].dropna(axis=0, how='any'),
-                              color = links_df['Link Color'].dropna(axis=0, how='any'),
-                          )
-                         )
-        
-        layout = dict(title = "Cell segmentation comparison human "+bc+' '+self.data_names[0]+' vs '+self.data_names[1], height = 772, font = dict(size = 10))
+        data_trace = dict(
+            type="sankey",
+            node=dict(
+                line=dict(color="black", width=0),
+                label=nodes_df["Label"].dropna(axis=0, how="any"),
+                color=nodes_df["Color"],
+            ),
+            link=dict(
+                source=links_df["Source"].dropna(axis=0, how="any"),
+                target=links_df["Target"].dropna(axis=0, how="any"),
+                value=links_df["Value"].dropna(axis=0, how="any"),
+                color=links_df["Link Color"].dropna(axis=0, how="any"),
+            ),
+        )
+
+        layout = dict(
+            title="Cell segmentation comparison human "
+            + bc
+            + " "
+            + self.data_names[0]
+            + " vs "
+            + self.data_names[1],
+            height=772,
+            font=dict(size=10),
+        )
         fig = go.Figure(dict(data=[data_trace], layout=layout))
-        #save interactive file
+        # save interactive file
         if save:
-            filepath = savepath+"/segmentation_comparison_"+bc+"_"+self.data_names[0]+'_'+self.data_names[1]+'.html'
+            filepath = (
+                savepath
+                + "/segmentation_comparison_"
+                + bc
+                + "_"
+                + self.data_names[0]
+                + "_"
+                + self.data_names[1]
+                + ".html"
+            )
             fig.write_html(filepath)
         fig.show()
         return fig, unknown_unmatched_cells, filepath
@@ -641,34 +730,87 @@ class SpatialCompare:
         INPUTS
             seg_comp_df:dataframe with unique index describing cell spatial locations (x and y), segmentation identifier, low quality cell identifier, mutual matches, and putative doublets.
         """
-        #overview of both sections plotted on same axes
+        # overview of both sections plotted on same axes
         fig, ax = plt.subplots()
-        filtered_seg_a_df = seg_comp_df[(seg_comp_df['source']==self.data_names[0])&(seg_comp_df['low_quality_cells']==False)]
-        filtered_seg_a_df.plot('center_x', 'center_y', kind='scatter', s=.1, label='high quality cells '+self.data_names[0], 
-                               ax=ax, color='blue', alpha=0.5)
-        filtered_seg_b_df = seg_comp_df[(seg_comp_df['source']==self.data_names[1])&(seg_comp_df['low_quality_cells']==False)]
-        filtered_seg_b_df.plot('center_x', 'center_y', kind='scatter', s=.3, label='high quality cells '+self.data_names[1], 
-                               ax=ax, color='red', alpha=0.5)
-        plt.title('Both segmentations, overlaid')
-        plt.axis('equal')
-    
-        #find center of one section to zoom in on
-        arr = filtered_seg_a_df[['center_x', 'center_y']].values
-        center = [np.mean(arr[:,0]), np.mean(arr[:,1])]
-        x_range = [center[0] - center[0]*.05, center[0]+ center[0]*.05]
-        y_range = [center[1] - center[1]*.05, center[1]+ center[1]*.05]
-        
-        #plot same area for both sections
+        filtered_seg_a_df = seg_comp_df[
+            (seg_comp_df["source"] == self.data_names[0])
+            & (seg_comp_df["low_quality_cells"] == False)
+        ]
+        filtered_seg_a_df.plot(
+            "center_x",
+            "center_y",
+            kind="scatter",
+            s=0.1,
+            label="high quality cells " + self.data_names[0],
+            ax=ax,
+            color="blue",
+            alpha=0.5,
+        )
+        filtered_seg_b_df = seg_comp_df[
+            (seg_comp_df["source"] == self.data_names[1])
+            & (seg_comp_df["low_quality_cells"] == False)
+        ]
+        filtered_seg_b_df.plot(
+            "center_x",
+            "center_y",
+            kind="scatter",
+            s=0.3,
+            label="high quality cells " + self.data_names[1],
+            ax=ax,
+            color="red",
+            alpha=0.5,
+        )
+        plt.title("Both segmentations, overlaid")
+        plt.axis("equal")
+
+        # find center of one section to zoom in on
+        arr = filtered_seg_a_df[["center_x", "center_y"]].values
+        center = [np.mean(arr[:, 0]), np.mean(arr[:, 1])]
+        x_range = [center[0] - center[0] * 0.05, center[0] + center[0] * 0.05]
+        y_range = [center[1] - center[1] * 0.05, center[1] + center[1] * 0.05]
+
+        # plot same area for both sections
         fig, ax = plt.subplots()
-        filtered_seg_a_df = seg_comp_df[(seg_comp_df['source']==self.data_names[0])&(seg_comp_df['low_quality_cells']==False)]
-        subs_a = filtered_seg_a_df[(filtered_seg_a_df['center_x'].between(x_range[0], x_range[1]))&(filtered_seg_a_df['center_y'].between(y_range[0], y_range[1]))]
-        subs_a.plot('center_x', 'center_y', kind='scatter', s=2, label= self.data_names[0], ax=ax, color='blue', alpha=0.5)
-        plt.title('Both segmentations, overlaid')
-        filtered_seg_b_df = seg_comp_df[(seg_comp_df['source']==self.data_names[1])&(seg_comp_df['low_quality_cells']==False)]
-        subs_b = filtered_seg_b_df[(filtered_seg_b_df['center_x'].between(x_range[0], x_range[1]))&(filtered_seg_b_df['center_y'].between(y_range[0], y_range[1]))]
-        subs_b.plot('center_x', 'center_y', kind='scatter', s=10, label=self.data_names[1], ax=ax, facecolors='none', edgecolors='r', alpha=0.5)
-        plt.title('Both segmentations, overlaid, zoomed in to center')
-        plt.axis('equal')
+        filtered_seg_a_df = seg_comp_df[
+            (seg_comp_df["source"] == self.data_names[0])
+            & (seg_comp_df["low_quality_cells"] == False)
+        ]
+        subs_a = filtered_seg_a_df[
+            (filtered_seg_a_df["center_x"].between(x_range[0], x_range[1]))
+            & (filtered_seg_a_df["center_y"].between(y_range[0], y_range[1]))
+        ]
+        subs_a.plot(
+            "center_x",
+            "center_y",
+            kind="scatter",
+            s=2,
+            label=self.data_names[0],
+            ax=ax,
+            color="blue",
+            alpha=0.5,
+        )
+        plt.title("Both segmentations, overlaid")
+        filtered_seg_b_df = seg_comp_df[
+            (seg_comp_df["source"] == self.data_names[1])
+            & (seg_comp_df["low_quality_cells"] == False)
+        ]
+        subs_b = filtered_seg_b_df[
+            (filtered_seg_b_df["center_x"].between(x_range[0], x_range[1]))
+            & (filtered_seg_b_df["center_y"].between(y_range[0], y_range[1]))
+        ]
+        subs_b.plot(
+            "center_x",
+            "center_y",
+            kind="scatter",
+            s=10,
+            label=self.data_names[1],
+            ax=ax,
+            facecolors="none",
+            edgecolors="r",
+            alpha=0.5,
+        )
+        plt.title("Both segmentations, overlaid, zoomed in to center")
+        plt.axis("equal")
         return
 
 
