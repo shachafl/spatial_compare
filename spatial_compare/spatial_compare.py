@@ -9,7 +9,7 @@ from scipy import sparse
 from matplotlib.ticker import FormatStrFormatter
 import warnings
 
-from spatial_compare import grouped_obs_mean
+from spatial_compare.utils import grouped_obs_mean
 
 
 
