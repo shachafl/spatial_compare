@@ -14,7 +14,6 @@ import warnings
 
 from spatial_compare.utils import grouped_obs_mean
 
-
 DEFAULT_DATA_NAMES = ["Data 0", "Data 1"]
 
 
