@@ -5,6 +5,7 @@ import pandas as pd
 import seaborn as sns
 import scipy as sp
 
+
 def grouped_obs_mean(adata, group_key, layer=None, gene_symbols=None):
     """
     Calculate the mean expression of observations grouped by a specified key.
@@ -47,55 +48,49 @@ def grouped_obs_mean(adata, group_key, layer=None, gene_symbols=None):
 
     return out
 
-def spatial_detection_score_kde(
-    query: pd.DataFrame,
-    grid_out: int = 100j
-):
+
+def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 100j):
     cell_x = query["x_centroid"]
     cell_y = query["y_centroid"]
-    
+
     xmin, xmax = cell_x.min(), cell_x.max()
     ymin, ymax = cell_y.min(), cell_y.max()
     extent = [xmin, xmax, ymin, ymax]
-    dmax = (xmax-xmin)**2 + (ymax-ymin)**2
-    
+    dmax = (xmax - xmin) ** 2 + (ymax - ymin) ** 2
+
     X, Y = np.mgrid[xmin:xmax:grid_out, ymin:ymax:grid_out]
     positions = np.vstack([X.ravel(), Y.ravel()])
-    
-    cell_coords = np.vstack(
-        [
-            cell_x.values,
-            cell_y.values
-        ]
-    );
 
-    scores = [];
-    for column in ["detection_relative_z_score", "detection_difference", "log_10_detection_ratio"]:
+    cell_coords = np.vstack([cell_x.values, cell_y.values])
+
+    scores = []
+    for column in [
+        "detection_relative_z_score",
+        "detection_difference",
+        "log_10_detection_ratio",
+    ]:
         weights = np.abs(query[column].values)
         weights[np.isnan(weights)] = 0
-        #weights = weights + abs(weights.min())
+        # weights = weights + abs(weights.min())
 
         kde = sp.stats.gaussian_kde(
             cell_coords,
-            weights=weights
+            # weights=weights
         )(positions).T
-        #Z = np.reshape(kde, X.shape).T
+        # Z = np.reshape(kde, X.shape).T
 
         output = np.zeros(kde.shape)
         for i, z in enumerate(kde):
             coord = positions[:, i]
-            output[i] = z * np.sum(np.sqrt(dmax - np.square(cell_coords.T - coord).sum(axis=1)) * weights)
+            output[i] = z * np.sum(
+                np.sqrt(dmax - np.square(cell_coords.T - coord).sum(axis=1)) * weights
+            )
         Z = np.reshape(output, X.shape).T
-        
+
         scores.append(Z)
 
-    return (
-        extent,
-        scores[0],
-        scores[1],
-        scores[2],
-        np.ones(Z.shape)
-    )
+    return (extent, scores[0], scores[1], scores[2], np.ones(Z.shape))
+
 
 def spatial_detection_score_binned(
     query: pd.DataFrame,
@@ -133,8 +128,9 @@ def spatial_detection_score_binned(
         bin_image_z_score,
         bin_image_difference,
         bin_image_ratio,
-        bin_image_counts
+        bin_image_counts,
     )
+
 
 def spatial_detection_scores(
     reference: pd.DataFrame,
@@ -175,7 +171,9 @@ def spatial_detection_scores(
         len(shared_category_values) < query[category].unique().shape[0]
         or len(shared_category_values) < reference[category].unique().shape[0]
     ):
-        print("Query and reference datasets had different shapes. Objects will not be modified in place")
+        print(
+            "Query and reference datasets had different shapes. Objects will not be modified in place"
+        )
         in_place = False
 
     if in_place:
@@ -203,14 +201,16 @@ def spatial_detection_scores(
             continue
 
         indices = s2[category] == c
-        
+
         s2.loc[indices, ["detection_relative_z_score"]] = (
             (s2.loc[indices, [comparison_column]] - means[c]) / stds[c]
         ).values
         s2.loc[indices, ["detection_difference"]] = (
             s2.loc[indices, [comparison_column]] - means[c]
         ).values
-        s2.loc[indices, ["detection_ratio"]] = (s2.loc[indices, [comparison_column]] / means[c]).values
+        s2.loc[indices, ["detection_ratio"]] = (
+            s2.loc[indices, [comparison_column]] / means[c]
+        ).values
         s2.loc[indices, ["log_10_detection_ratio"]] = np.log10(
             s2.loc[indices, ["detection_ratio"]].values
         )
@@ -221,7 +221,7 @@ def spatial_detection_scores(
             bin_image_z_score,
             bin_image_difference,
             bin_image_ratio,
-            bin_image_counts
+            bin_image_counts,
         ) = spatial_detection_score_binned(s2, n_bins)
     else:
         (
@@ -229,7 +229,7 @@ def spatial_detection_scores(
             bin_image_z_score,
             bin_image_difference,
             bin_image_ratio,
-            bin_image_counts
+            bin_image_counts,
         ) = spatial_detection_score_kde(s2)
 
     if plot_stuff:
@@ -261,8 +261,8 @@ def spatial_detection_scores(
                 min_maxes[plot_name][0],
                 extent=extent,
                 cmap="coolwarm_r",
-                #vmin=min_maxes[plot_name][1][0],
-                #vmax=min_maxes[plot_name][1][1],
+                # vmin=min_maxes[plot_name][1][0],
+                # vmax=min_maxes[plot_name][1][1],
             )
             fig.colorbar(pcm, ax=ax, shrink=0.7)
             ax.set_title(query_name + "\n" + plot_name)
