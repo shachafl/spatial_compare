@@ -1041,7 +1041,6 @@ def find_best_match_groups(
         if match_10[match_01[k]] == k:
             mutual_matches.update({k: match_01[k]})
 
-    INPUT_CLUSTER_NAME = "leiden_0"
 
     if in_place:
         ad0.obs["matched_" + group_names[0]] = ""
@@ -1049,16 +1048,16 @@ def find_best_match_groups(
 
         for mm in mutual_matches:
 
-            match_mask0 = ad0.obs[INPUT_CLUSTER_NAME] == g_o_m_0.columns[mm]
-            ad0.obs.loc[match_mask0, ["matched_leiden_clusters"]] = (
-                "matched_leiden_cluster_" + str(mm)
+            match_mask0 = ad0.obs[group_names[0]] == g_o_m_0.columns[mm]
+            ad0.obs.loc[match_mask0, ["matched_" + group_names[0]]] = (
+                "matched_" + group_names[0]" + str(mm)
             )
 
             match_mask1 = (
-                ad1.obs[INPUT_CLUSTER_NAME] == g_o_m_1.columns[mutual_matches[mm]]
+                ad1.obs[group_names[0]] == g_o_m_1.columns[mutual_matches[mm]]
             )
-            ad1.obs.loc[match_mask1, ["matched_leiden_clusters"]] = (
-                "matched_leiden_cluster_" + str(mm)
+            ad1.obs.loc[match_mask1, ["matched_" + group_names[0]]] = (
+                "matched_" + group_names[0] + str(mm)
             )
     else:
         ad0_out = ad0.copy()
@@ -1069,16 +1068,16 @@ def find_best_match_groups(
 
         for mm in mutual_matches:
 
-            match_mask0 = ad0_out.obs[INPUT_CLUSTER_NAME] == g_o_m_0.columns[mm]
+            match_mask0 = ad0_out.obs[group_names[0]] == g_o_m_0.columns[mm]
             ad0_out.obs.loc[match_mask0, ["matched_" + group_names[0]]] = (
-                "matched_leiden_cluster_" + str(mm)
+                "matched_" + group_names[0] + str(mm)
             )
 
             match_mask1 = (
-                ad1_out.obs[INPUT_CLUSTER_NAME] == g_o_m_1.columns[mutual_matches[mm]]
+                ad1_out.obs[group_names[0]] == g_o_m_1.columns[mutual_matches[mm]]
             )
             ad1_out.obs.loc[match_mask1, ["matched_" + group_names[0]]] = (
-                "matched_leiden_cluster_" + str(mm)
+                "matched_" + group_names[0] + str(mm)
             )
         return (ad0, ad1)
 
