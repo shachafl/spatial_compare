@@ -1050,7 +1050,7 @@ def find_best_match_groups(
 
             match_mask0 = ad0.obs[group_names[0]] == g_o_m_0.columns[mm]
             ad0.obs.loc[match_mask0, ["matched_" + group_names[0]]] = (
-                "matched_" + group_names[0]" + str(mm)
+                "matched_" + group_names[0] + str(mm)
             )
 
             match_mask1 = (
