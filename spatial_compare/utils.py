@@ -49,7 +49,7 @@ def grouped_obs_mean(adata, group_key, layer=None, gene_symbols=None):
     return out
 
 
-def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 100j):
+def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 20):
     cell_x = query["x_centroid"]
     cell_y = query["y_centroid"]
 
@@ -71,21 +71,18 @@ def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 100j):
     ]:
         weights = np.abs(query[column].values)
         weights[np.isnan(weights)] = 0
-        # weights = weights + abs(weights.min())
+        weights = weights + abs(weights.min())
 
-        kde = sp.stats.gaussian_kde(
+        kde_weighted = sp.stats.gaussian_kde(
             cell_coords,
-            # weights=weights
+            weights=weights
         )(positions).T
-        # Z = np.reshape(kde, X.shape).T
-
-        output = np.zeros(kde.shape)
-        for i, z in enumerate(kde):
-            coord = positions[:, i]
-            output[i] = z * np.sum(
-                np.sqrt(dmax - np.square(cell_coords.T - coord).sum(axis=1)) * weights
-            )
-        Z = np.reshape(output, X.shape).T
+        
+        kde_unweighted = sp.stats.gaussian_kde(
+            cell_coords,
+        )(positions).T
+        
+        Z = np.reshape(kde_weighted / kde_unweighted, X.shape).T
 
         scores.append(Z)
 
@@ -230,7 +227,7 @@ def spatial_detection_scores(
             bin_image_difference,
             bin_image_ratio,
             bin_image_counts,
-        ) = spatial_detection_score_kde(s2)
+        ) = spatial_detection_score_kde(s2, n_bins)
 
     if plot_stuff:
         if non_spatial:
