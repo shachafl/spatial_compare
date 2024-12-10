@@ -155,7 +155,7 @@ class SpatialCompare:
 
         self.spatial_compare_results = None
 
-        self.ran_preprocessing=False
+        self.ran_preprocessing = False
 
     def set_category(self, category):
         if (
@@ -230,25 +230,31 @@ class SpatialCompare:
             if plot_legend:
                 plt.legend(markerscale=5)
 
-    def de_novo_cluster(self, plot_stuff=False, correspondence_level="leiden_1",run_preprocessing=False):
+    def de_novo_cluster(
+        self, plot_stuff=False, correspondence_level="leiden_1", run_preprocessing=False
+    ):
 
         # force running of preprocessing the first time through
         if not run_preprocessing:
             if not self.ran_preprocessing:
                 run_preprocessing = True
-                
-        self.ad_0 = filter_and_cluster_twice(self.ad_0, plot_stuff=plot_stuff, run_preprocessing=run_preprocessing)
-        self.ad_1 = filter_and_cluster_twice(self.ad_1, plot_stuff=plot_stuff, run_preprocessing=run_preprocessing)
-        
+
+        self.ad_0 = filter_and_cluster_twice(
+            self.ad_0, plot_stuff=plot_stuff, run_preprocessing=run_preprocessing
+        )
+        self.ad_1 = filter_and_cluster_twice(
+            self.ad_1, plot_stuff=plot_stuff, run_preprocessing=run_preprocessing
+        )
+
         if run_preprocessing:
-            self.ran_preprocessing=True
+            self.ran_preprocessing = True
         find_best_match_groups(
             self.ad_0,
             self.ad_1,
             group_names=[correspondence_level, correspondence_level],
         )
         self.can_compare = True
-        self.set_category("matched_"+correspondence_level)
+        self.set_category("matched_" + correspondence_level)
         return True
 
     def find_matched_groups(
@@ -848,7 +854,7 @@ def filter_and_cluster_twice(
         input_ad.X = input_ad.X.toarray()
 
     print("converted to array  ")
-    if "gene" in input_ad.var.columns:      
+    if "gene" in input_ad.var.columns:
         low_detection_genes = input_ad.var.iloc[
             np.nonzero(np.max(input_ad.X, axis=0) <= min_max_counts)
         ].gene
@@ -856,16 +862,14 @@ def filter_and_cluster_twice(
         low_detection_genes = input_ad.var.iloc[
             np.nonzero(np.max(input_ad.X, axis=0) <= min_max_counts)
         ].index
-        
+
     # throw out genes if no cells have more than 3 counts
-    if "gene" in input_ad.var.columns: 
+    if "gene" in input_ad.var.columns:
         gene_list = [g for g in input_ad.var.gene if g not in low_detection_genes]
     else:
         gene_list = [g for g in input_ad.var.index if g not in low_detection_genes]
 
-    to_cluster = input_ad[
-        input_ad.obs.transcript_counts >= min_transcript_counts,:
-    ]
+    to_cluster = input_ad[input_ad.obs.transcript_counts >= min_transcript_counts, :]
 
     # this is to prevent multiple "leiden" columns from being added to the obs dataframe
     to_cluster.obs = to_cluster.obs.loc[
@@ -883,7 +887,7 @@ def filter_and_cluster_twice(
         sc.pp.normalize_total(to_cluster)
         # Logarithmize the data
         sc.pp.log1p(to_cluster)
-    
+
         sc.pp.highly_variable_genes(to_cluster, n_top_genes=n_hvgs)
 
     sc.tl.pca(to_cluster, n_comps=n_pcs[0])
@@ -1062,7 +1066,6 @@ def find_best_match_groups(
         if match_10[match_01[k]] == k:
             mutual_matches.update({k: match_01[k]})
 
-
     if in_place:
         ad0.obs["matched_" + group_names[0]] = ""
         ad1.obs["matched_" + group_names[0]] = ""
@@ -1071,14 +1074,12 @@ def find_best_match_groups(
 
             match_mask0 = ad0.obs[group_names[0]] == g_o_m_0.columns[mm]
             ad0.obs.loc[match_mask0, ["matched_" + group_names[0]]] = (
-                "matched_" + group_names[0] +"_"+ str(mm)
+                "matched_" + group_names[0] + "_" + str(mm)
             )
 
-            match_mask1 = (
-                ad1.obs[group_names[0]] == g_o_m_1.columns[mutual_matches[mm]]
-            )
+            match_mask1 = ad1.obs[group_names[0]] == g_o_m_1.columns[mutual_matches[mm]]
             ad1.obs.loc[match_mask1, ["matched_" + group_names[0]]] = (
-                "matched_" + group_names[0] +"_"+ str(mm)
+                "matched_" + group_names[0] + "_" + str(mm)
             )
     else:
         ad0_out = ad0.copy()
@@ -1091,14 +1092,14 @@ def find_best_match_groups(
 
             match_mask0 = ad0_out.obs[group_names[0]] == g_o_m_0.columns[mm]
             ad0_out.obs.loc[match_mask0, ["matched_" + group_names[0]]] = (
-                "matched_" + group_names[0] +"_"+ str(mm)
+                "matched_" + group_names[0] + "_" + str(mm)
             )
 
             match_mask1 = (
                 ad1_out.obs[group_names[0]] == g_o_m_1.columns[mutual_matches[mm]]
             )
             ad1_out.obs.loc[match_mask1, ["matched_" + group_names[0]]] = (
-                "matched_" + group_names[0] +"_"+ str(mm)
+                "matched_" + group_names[0] + "_" + str(mm)
             )
         return (ad0, ad1)
 
