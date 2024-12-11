@@ -123,8 +123,12 @@ def spatial_detection_scores(
         )
 
     # determine number of bins on each axis for grouping the data spatially
-    nx_bins = np.ceil((s2.x_centroid.max() - s2.x_centroid.min()) / bin_size).astype(int)
-    ny_bins = np.ceil((s2.y_centroid.max() - s2.y_centroid.min()) / bin_size).astype(int)
+    nx_bins = np.ceil((s2.x_centroid.max() - s2.x_centroid.min()) / bin_size).astype(
+        int
+    )
+    ny_bins = np.ceil((s2.y_centroid.max() - s2.y_centroid.min()) / bin_size).astype(
+        int
+    )
 
     s2["xy_bucket"] = list(
         zip(
