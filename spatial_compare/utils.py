@@ -85,7 +85,10 @@ def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 100):
         )
 
         if column == "detection_relative_z_score":
-            estimator = lambda positions: kde_weighted(positions).T / kde_unweighted(positions).T
+            estimator = (
+                lambda positions: kde_weighted(positions).T
+                / kde_unweighted(positions).T
+            )
 
         Z = kde_weighted(positions).T / kde_unweighted(positions).T
         Z = (Z - Z.min()) / (Z.max() - Z.min()) * (wext[1] - wext[0]) + wext[0]
@@ -148,7 +151,7 @@ def spatial_detection_scores(
     in_place: bool = True,
     non_spatial: bool = False,
     use_kde: bool = False,
-    mask: float = 0.0
+    mask: float = 0.0,
 ):
     """
     Calculate and plot spatial detection scores for query data compared to reference data.
@@ -227,7 +230,7 @@ def spatial_detection_scores(
             bin_image_z_score,
             bin_image_difference,
             bin_image_ratio,
-            bin_image_counts
+            bin_image_counts,
         ) = spatial_detection_score_binned(s2, n_bins)
     else:
         (
@@ -242,7 +245,9 @@ def spatial_detection_scores(
 
     if mask != 0.0:
         bin_image_z_score = bin_image_z_score > np.quantile(bin_image_z_score, mask)
-        bin_image_difference = bin_image_difference > np.quantile(bin_image_difference, mask)
+        bin_image_difference = bin_image_difference > np.quantile(
+            bin_image_difference, mask
+        )
         bin_image_ratio = bin_image_ratio > np.quantile(bin_image_ratio, mask)
         bin_image_counts = bin_image_counts > np.quantile(bin_image_counts, mask)
 
@@ -302,13 +307,14 @@ def spatial_detection_scores(
 
     if use_kde:
         ret["z_score_estimator"] = estimator
-    
+
     if in_place:
         return ret
     else:
         ret["query"] = s2
         ret["reference"] = s1
         return ret
+
 
 def summarize_and_plot(
     spatial_density_results,
