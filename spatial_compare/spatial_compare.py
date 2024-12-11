@@ -493,9 +493,7 @@ class SpatialCompare:
                     [np.min(means_0), np.max(means_0)],
                     "--",
                 )
-        print(gene_ratio_dfs.keys())
         if len(gene_ratio_dfs.keys()) > 0:
-
             gene_ratio_df = pd.concat(gene_ratio_dfs, axis=1)
         else:
             gene_ratio_df = None
@@ -506,13 +504,11 @@ class SpatialCompare:
         }
 
     def plot_detection_ratio(self, gene_ratio_dataframe, figsize=[15, 15]):
-
         detection_ratio_plots(
             gene_ratio_dataframe, data_names=self.data_names, figsize=figsize
         )
 
     def spatial_compare(self, **kwargs):
-
         if "category" in kwargs.keys():
             self.set_category(kwargs["category"])
 
@@ -834,7 +830,6 @@ def filter_and_cluster_twice(
     if isinstance(input_ad.X, sparse.csr.csr_matrix):
         input_ad.X = input_ad.X.toarray()
 
-    print("converted to array  ")
     low_detection_genes = input_ad.var.iloc[
         np.nonzero(np.max(input_ad.X, axis=0) <= min_max_counts)
     ].gene
@@ -856,7 +851,6 @@ def filter_and_cluster_twice(
     ]
 
     # Normalizing to median total counts
-    print("normalizing total counts")
     sc.pp.normalize_total(to_cluster)
     # Logarithmize the data
     sc.pp.log1p(to_cluster)
@@ -879,11 +873,9 @@ def filter_and_cluster_twice(
 
     # per cluster, repeat PCA and clustering...
     # this duplicates the data! but it's necessary because the scanpy functions would create a copy of the subset anyway(?)
-    print("2nd round of clustering")
     all_subs = []
     for cl in to_cluster.obs.leiden_0.unique():
         subcopy = to_cluster[to_cluster.obs.leiden_0 == cl, :].copy()
-        print(subcopy.shape)
         sc.tl.pca(subcopy, n_comps=n_pcs[1])
         sc.pp.neighbors(subcopy)
         sc.tl.leiden(subcopy, n_iterations=n_iterations[1])
@@ -895,7 +887,6 @@ def filter_and_cluster_twice(
         ]
 
         all_subs.append(subcopy)
-    print("concatenating")
     iterative_clusters_ad = ad.concat(all_subs)
 
     return iterative_clusters_ad

@@ -56,7 +56,6 @@ def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 100):
     xmin, xmax = cell_x.min(), cell_x.max()
     ymin, ymax = cell_y.min(), cell_y.max()
     extent = [xmin, xmax, ymin, ymax]
-    dmax = (xmax - xmin) ** 2 + (ymax - ymin) ** 2
 
     X, Y = np.mgrid[
         xmin : xmax : complex(0, grid_out), ymin : ymax : complex(0, grid_out)
@@ -69,10 +68,13 @@ def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 100):
     for column in [
         "detection_relative_z_score",
         "detection_difference",
-        "detection_ratio",
+        "log_10_detection_ratio",
     ]:
-        weights = np.abs(query[column].values)
+        weights = query[column].values
         weights[np.isnan(weights)] = 0
+
+        wext = [weights.min(), weights.max()]
+        
         weights = weights + abs(weights.min())
 
         kde_weighted = sp.stats.gaussian_kde(cell_coords, weights=weights)(positions).T
@@ -82,10 +84,11 @@ def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 100):
         )(positions).T
 
         Z = np.reshape(kde_weighted / kde_unweighted, X.shape).T
+        Z = (Z-Z.min())/(Z.max()-Z.min()) * (wext[1] - wext[0]) + wext[0]
 
         scores.append(Z)
 
-    return (extent, scores[0], scores[1], np.log10(scores[2]), np.ones(Z.shape))
+    return (extent, scores[0], scores[1], scores[2], np.ones(Z.shape))
 
 
 def spatial_detection_score_binned(
@@ -257,8 +260,8 @@ def spatial_detection_scores(
                 min_maxes[plot_name][0],
                 extent=extent,
                 cmap="coolwarm_r",
-                # vmin=min_maxes[plot_name][1][0],
-                # vmax=min_maxes[plot_name][1][1],
+                #vmin=min_maxes[plot_name][1][0],
+                #vmax=min_maxes[plot_name][1][1],
             )
             fig.colorbar(pcm, ax=ax, shrink=0.7)
             ax.set_title(query_name + "\n" + plot_name)
