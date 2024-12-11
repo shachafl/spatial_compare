@@ -52,17 +52,19 @@ def grouped_obs_mean(adata, group_key, layer=None, gene_symbols=None):
 def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 100):
     cell_x = query["x_centroid"]
     cell_y = query["y_centroid"]
+    cell_coords = np.vstack([cell_x.values, cell_y.values])
 
     xmin, xmax = cell_x.min(), cell_x.max()
     ymin, ymax = cell_y.min(), cell_y.max()
     extent = [xmin, xmax, ymin, ymax]
 
-    X, Y = np.mgrid[
-        xmin : xmax : complex(0, grid_out), ymin : ymax : complex(0, grid_out)
-    ]
-    positions = np.vstack([X.ravel(), Y.ravel()])
-
-    cell_coords = np.vstack([cell_x.values, cell_y.values])
+    if grid_out == 0:
+        positions = cell_coords
+    else:
+        X, Y = np.mgrid[
+            xmin : xmax : complex(0, grid_out), ymin : ymax : complex(0, grid_out)
+        ]
+        positions = np.vstack([X.ravel(), Y.ravel()])
 
     scores = []
     for column in [
@@ -77,18 +79,22 @@ def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 100):
 
         weights = weights + abs(weights.min())
 
-        kde_weighted = sp.stats.gaussian_kde(cell_coords, weights=weights)(positions).T
-
+        kde_weighted = sp.stats.gaussian_kde(cell_coords, weights=weights)
         kde_unweighted = sp.stats.gaussian_kde(
             cell_coords,
-        )(positions).T
+        )
 
-        Z = np.reshape(kde_weighted / kde_unweighted, X.shape).T
+        if column == "detection_relative_z_score":
+            estimator = lambda positions: kde_weighted(positions).T / kde_unweighted(positions).T
+
+        Z = kde_weighted(positions).T / kde_unweighted(positions).T
         Z = (Z - Z.min()) / (Z.max() - Z.min()) * (wext[1] - wext[0]) + wext[0]
+        if grid_out != 0:
+            Z = np.reshape(Z, X.shape).T
 
         scores.append(Z)
 
-    return (extent, scores[0], scores[1], scores[2], np.ones(Z.shape))
+    return (estimator, extent, scores[0], scores[1], scores[2])
 
 
 def spatial_detection_score_binned(
@@ -134,7 +140,7 @@ def spatial_detection_score_binned(
 def spatial_detection_scores(
     reference: pd.DataFrame,
     query: pd.DataFrame,
-    plot_stuff=True,
+    plot_stuff: bool = True,
     query_name: str = "query data",
     comparison_column: str = "transcript_counts",
     category: str = "supercluster_name",
@@ -142,6 +148,7 @@ def spatial_detection_scores(
     in_place: bool = True,
     non_spatial: bool = False,
     use_kde: bool = False,
+    mask: float = 0.0
 ):
     """
     Calculate and plot spatial detection scores for query data compared to reference data.
@@ -155,7 +162,7 @@ def spatial_detection_scores(
         n_bins (int, optional): The number of bins for spatial grouping. Defaults to 50.
         in_place (bool, optional): Whether to modify the query data in place. Defaults to True.
         non_spatial (bool, optional): Whether to compare to an ungrouped mean/std. Defaults to False.
-        use_kde (bool, optional): Whether to use kernel-density estimates instead of taking binned averages. Defaults to False.
+        use_kde (bool, optional): Whether to use kernel-density estimates instead of taking binned averages. Samples the KDE on a `n_bins` square grid for plotting, unless `n_bins == 0` (in which case it will be sampled at the cell coordinates). Defaults to False.
 
     Returns:
         dict: A dictionary containing the bin image, extent, query data, and reference data (if in_place is False).
@@ -220,16 +227,24 @@ def spatial_detection_scores(
             bin_image_z_score,
             bin_image_difference,
             bin_image_ratio,
-            bin_image_counts,
+            bin_image_counts
         ) = spatial_detection_score_binned(s2, n_bins)
     else:
         (
+            estimator,
             extent,
             bin_image_z_score,
             bin_image_difference,
             bin_image_ratio,
-            bin_image_counts,
         ) = spatial_detection_score_kde(s2, n_bins)
+        # FIXME: not computing this
+        bin_image_counts = np.zeros(bin_image_ratio.shape)
+
+    if mask != 0.0:
+        bin_image_z_score = bin_image_z_score > np.quantile(bin_image_z_score, mask)
+        bin_image_difference = bin_image_difference > np.quantile(bin_image_difference, mask)
+        bin_image_ratio = bin_image_ratio > np.quantile(bin_image_ratio, mask)
+        bin_image_counts = bin_image_counts > np.quantile(bin_image_counts, mask)
 
     if plot_stuff:
         if non_spatial:
@@ -256,38 +271,44 @@ def spatial_detection_scores(
             )
         for ii, plot_name in enumerate(min_maxes.keys()):
             ax = axs[ii]
-            pcm = ax.imshow(
-                min_maxes[plot_name][0],
-                extent=extent,
-                cmap="coolwarm_r",
-                # vmin=min_maxes[plot_name][1][0],
-                # vmax=min_maxes[plot_name][1][1],
-            )
+
+            if n_bins != 0:
+                pcm = ax.imshow(
+                    min_maxes[plot_name][0],
+                    extent=extent,
+                    cmap="coolwarm_r",
+                    # vmin=min_maxes[plot_name][1][0],
+                    # vmax=min_maxes[plot_name][1][1],
+                )
+            else:
+                pcm = ax.scatter(
+                    s2.x_centroid.values,
+                    -s2.y_centroid.values,
+                    c=min_maxes[plot_name][0],
+                    cmap="coolwarm_r",
+                )
             fig.colorbar(pcm, ax=ax, shrink=0.7)
             ax.set_title(query_name + "\n" + plot_name)
 
+    ret = dict(
+        z_score_image=bin_image_z_score,
+        difference_image=bin_image_difference,
+        ratio_image=bin_image_ratio,
+        extent=extent,
+        count_image=bin_image_counts,
+        query=True,
+        reference=True,
+    )
+
+    if use_kde:
+        ret["z_score_estimator"] = estimator
+    
     if in_place:
-        return dict(
-            z_score_image=bin_image_z_score,
-            difference_image=bin_image_difference,
-            ratio_image=bin_image_ratio,
-            extent=extent,
-            count_image=bin_image_counts,
-            query=True,
-            reference=True,
-        )
-
+        return ret
     else:
-        return dict(
-            z_score_image=bin_image_z_score,
-            difference_image=bin_image_difference,
-            ratio_image=bin_image_ratio,
-            extent=extent,
-            count_image=bin_image_counts,
-            query=s2,
-            reference=s1,
-        )
-
+        ret["query"] = s2
+        ret["reference"] = s1
+        return ret
 
 def summarize_and_plot(
     spatial_density_results,
