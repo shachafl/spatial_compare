@@ -166,6 +166,7 @@ def spatial_detection_scores(
         in_place (bool, optional): Whether to modify the query data in place. Defaults to True.
         non_spatial (bool, optional): Whether to compare to an ungrouped mean/std. Defaults to False.
         use_kde (bool, optional): Whether to use kernel-density estimates instead of taking binned averages. Samples the KDE on a `n_bins` square grid for plotting, unless `n_bins == 0` (in which case it will be sampled at the cell coordinates). Defaults to False.
+        mask (float, optional): A quantile at which to create binary masks from. Defaults to 0.0 (do not binarize).
 
     Returns:
         dict: A dictionary containing the bin image, extent, query data, and reference data (if in_place is False).
