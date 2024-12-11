@@ -49,7 +49,7 @@ def grouped_obs_mean(adata, group_key, layer=None, gene_symbols=None):
     return out
 
 
-def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 20):
+def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 100):
     cell_x = query["x_centroid"]
     cell_y = query["y_centroid"]
 
@@ -58,7 +58,9 @@ def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 20):
     extent = [xmin, xmax, ymin, ymax]
     dmax = (xmax - xmin) ** 2 + (ymax - ymin) ** 2
 
-    X, Y = np.mgrid[xmin:xmax:grid_out, ymin:ymax:grid_out]
+    X, Y = np.mgrid[
+        xmin : xmax : complex(0, grid_out), ymin : ymax : complex(0, grid_out)
+    ]
     positions = np.vstack([X.ravel(), Y.ravel()])
 
     cell_coords = np.vstack([cell_x.values, cell_y.values])
@@ -67,26 +69,23 @@ def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 20):
     for column in [
         "detection_relative_z_score",
         "detection_difference",
-        "log_10_detection_ratio",
+        "detection_ratio",
     ]:
         weights = np.abs(query[column].values)
         weights[np.isnan(weights)] = 0
         weights = weights + abs(weights.min())
 
-        kde_weighted = sp.stats.gaussian_kde(
-            cell_coords,
-            weights=weights
-        )(positions).T
-        
+        kde_weighted = sp.stats.gaussian_kde(cell_coords, weights=weights)(positions).T
+
         kde_unweighted = sp.stats.gaussian_kde(
             cell_coords,
         )(positions).T
-        
+
         Z = np.reshape(kde_weighted / kde_unweighted, X.shape).T
 
         scores.append(Z)
 
-    return (extent, scores[0], scores[1], scores[2], np.ones(Z.shape))
+    return (extent, scores[0], scores[1], np.log10(scores[2]), np.ones(Z.shape))
 
 
 def spatial_detection_score_binned(
@@ -153,7 +152,7 @@ def spatial_detection_scores(
         n_bins (int, optional): The number of bins for spatial grouping. Defaults to 50.
         in_place (bool, optional): Whether to modify the query data in place. Defaults to True.
         non_spatial (bool, optional): Whether to compare to an ungrouped mean/std. Defaults to False.
-        use_kde (bool, optional): Whether to use kernel-density estimates or not. If not, bins into `n_bins` instead. Defaults to False.
+        use_kde (bool, optional): Whether to use kernel-density estimates instead of taking binned averages. Defaults to False.
 
     Returns:
         dict: A dictionary containing the bin image, extent, query data, and reference data (if in_place is False).
