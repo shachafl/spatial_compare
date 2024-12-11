@@ -277,11 +277,16 @@ def spatial_detection_scores(
         for ii, plot_name in enumerate(min_maxes.keys()):
             ax = axs[ii]
 
+            if mask != 0.0:
+                cmap = "Greys"
+            else:
+                cmap = "woolwarm_r"
+
             if n_bins != 0:
                 pcm = ax.imshow(
                     min_maxes[plot_name][0],
                     extent=extent,
-                    cmap="coolwarm_r",
+                    cmap=cmap,
                     # vmin=min_maxes[plot_name][1][0],
                     # vmax=min_maxes[plot_name][1][1],
                 )
@@ -290,7 +295,7 @@ def spatial_detection_scores(
                     s2.x_centroid.values,
                     -s2.y_centroid.values,
                     c=min_maxes[plot_name][0],
-                    cmap="coolwarm_r",
+                    cmap=cmap,
                 )
             fig.colorbar(pcm, ax=ax, shrink=0.7)
             ax.set_title(query_name + "\n" + plot_name)
