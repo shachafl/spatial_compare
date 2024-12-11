@@ -74,7 +74,7 @@ def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 100):
         weights[np.isnan(weights)] = 0
 
         wext = [weights.min(), weights.max()]
-        
+
         weights = weights + abs(weights.min())
 
         kde_weighted = sp.stats.gaussian_kde(cell_coords, weights=weights)(positions).T
@@ -84,7 +84,7 @@ def spatial_detection_score_kde(query: pd.DataFrame, grid_out: int = 100):
         )(positions).T
 
         Z = np.reshape(kde_weighted / kde_unweighted, X.shape).T
-        Z = (Z-Z.min())/(Z.max()-Z.min()) * (wext[1] - wext[0]) + wext[0]
+        Z = (Z - Z.min()) / (Z.max() - Z.min()) * (wext[1] - wext[0]) + wext[0]
 
         scores.append(Z)
 
@@ -260,8 +260,8 @@ def spatial_detection_scores(
                 min_maxes[plot_name][0],
                 extent=extent,
                 cmap="coolwarm_r",
-                #vmin=min_maxes[plot_name][1][0],
-                #vmax=min_maxes[plot_name][1][1],
+                # vmin=min_maxes[plot_name][1][0],
+                # vmax=min_maxes[plot_name][1][1],
             )
             fig.colorbar(pcm, ax=ax, shrink=0.7)
             ax.set_title(query_name + "\n" + plot_name)
