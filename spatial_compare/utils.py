@@ -280,7 +280,7 @@ def spatial_detection_scores(
             if mask != 0.0:
                 cmap = "Greys"
             else:
-                cmap = "woolwarm_r"
+                cmap = "coolwarm_r"
 
             if n_bins != 0:
                 pcm = ax.imshow(
