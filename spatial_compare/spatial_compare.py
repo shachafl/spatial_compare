@@ -18,6 +18,7 @@ from spatial_compare.utils import grouped_obs_mean
 DEFAULT_DATA_NAMES = ["Data 0", "Data 1"]
 TARGET_LEGEND_MARKER_SIZE = 20
 
+
 class SpatialCompare:
     """
     A class for comparing spatial data between two AnnData objects.
@@ -220,7 +221,7 @@ class SpatialCompare:
             )
             plt.axis("equal")
             if plot_legend:
-                markerscale = TARGET_LEGEND_MARKER_SIZE/ad0_dot_size
+                markerscale = TARGET_LEGEND_MARKER_SIZE / ad0_dot_size
                 plt.legend(markerscale=markerscale)
             plt.subplot(1, 2, 2)
             plt.title(self.data_names[1])
@@ -241,7 +242,7 @@ class SpatialCompare:
             )
             plt.axis("equal")
             if plot_legend:
-                markerscale = TARGET_LEGEND_MARKER_SIZE/ad1_dot_size
+                markerscale = TARGET_LEGEND_MARKER_SIZE / ad1_dot_size
                 plt.legend(markerscale=markerscale)
 
     def de_novo_cluster(
