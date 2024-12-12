@@ -16,7 +16,7 @@ from spatial_compare.utils import grouped_obs_mean
 
 
 DEFAULT_DATA_NAMES = ["Data 0", "Data 1"]
-
+TARGET_LEGEND_MARKER_SIZE = 20
 
 class SpatialCompare:
     """
@@ -64,10 +64,10 @@ class SpatialCompare:
         Perform de novo clustering on the two datasets.
     find_matched_groups(n_top_groups=100, n_shared_groups=30, min_n_cells=100, category_values=[], exclude_group_string="zzzzzzzzzzzzzzz", plot_stuff=False, figsize=[10,10])
         Find matched groups between the two datasets.
-    compare_expression(category_values=[], plot_stuff=False, min_mean_expression=.2, min_genes_to_compare=5, min_cells=10, ntop_genes=10)
+    compare_expression(category_values=[], plot_stuff=False, min_mean_expression=.2, min_genes_to_compare=5, min_cells=10, ntop_genes=20)
         Compare gene expression between the two datasets.
 
-    run_and_plot(category_values = d1d2_cells, min_mean_expression=.2, ntop_genes=5, filtred=True, dot_size=)
+    run_and_plot(category_values = d1d2_cells, min_mean_expression=.2, ntop_genes=20, filtred=True, dot_size=)
         Run all the plots, can select the genes to appear the label (ntop_genes), choose to filter 25 bottom, middle and top genes in the boxplot (filtred=True). Can choose the size of dots of spatial plot (dot_size=(3*18231)/(self.ad_0.n_obs)).
 
     """
@@ -191,8 +191,16 @@ class SpatialCompare:
         if len(category_values) == 0:
             category_values = all_category_values
 
+        if dot_size is None:
+            ad0_dot_size = (3 * 18231) / (self.ad_0.n_obs)
+            ad1_dot_size = (3 * 18231) / (self.ad_1.n_obs)
+        else:
+            ad0_dot_size = dot_size
+            ad1_dot_size = dot_size
+
         for c in category_values:
             plt.subplot(1, 2, 1)
+
             plt.title(self.data_names[0])
             if np.sum(self.ad_0.obs[self.category] == c) > min_cells_to_plot:
                 label = c + ": " + str(np.sum(self.ad_0.obs[self.category] == c))
@@ -208,11 +216,12 @@ class SpatialCompare:
                 ],
                 ".",
                 label=label,
-                markersize=dot_size,  # Use the dot_size parameter
+                markersize=ad0_dot_size,  # Use the dot_size parameter
             )
             plt.axis("equal")
             if plot_legend:
-                plt.legend(markerscale=5)
+                markerscale = TARGET_LEGEND_MARKER_SIZE/ad0_dot_size
+                plt.legend(markerscale=markerscale)
             plt.subplot(1, 2, 2)
             plt.title(self.data_names[1])
             if np.sum(self.ad_1.obs[self.category] == c) > min_cells_to_plot:
@@ -228,11 +237,12 @@ class SpatialCompare:
                 ],
                 ".",
                 label=label,
-                markersize=dot_size,  # Use the dot_size parameter
+                markersize=ad1_dot_size,  # Use the dot_size parameter
             )
             plt.axis("equal")
             if plot_legend:
-                plt.legend(markerscale=5)
+                markerscale = TARGET_LEGEND_MARKER_SIZE/ad1_dot_size
+                plt.legend(markerscale=markerscale)
 
     def de_novo_cluster(
         self, plot_stuff=False, correspondence_level="leiden_1", run_preprocessing=False
@@ -381,7 +391,7 @@ class SpatialCompare:
         min_mean_expression=0.2,
         min_genes_to_compare=5,
         min_cells=10,
-        ntop_genes=10,
+        ntop_genes=20,
     ):
         # Group cells
         if len(category_values) == 0:
@@ -598,8 +608,8 @@ class SpatialCompare:
     def run_and_plot(self, **kwargs):
         if "category" in kwargs.keys():
             self.set_category(kwargs["category"])
-        dot_size = kwargs.get("dot_size", (3 * 18231) / (self.ad_0.n_obs))
-        ntop_genes = kwargs.get("ntop_genes", 10)
+        dot_size = kwargs.get("dot_size", None)
+        ntop_genes = kwargs.get("ntop_genes", 20)
         filtred = kwargs.get("filtred", True)
 
         self.spatial_plot(dot_size=dot_size)
