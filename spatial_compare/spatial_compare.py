@@ -58,14 +58,17 @@ class SpatialCompare:
     -------
     set_category(category)
         Set the category to compare.
-    spatial_plot(plot_legend=True, min_cells_to_plot=10, decimate_for_spatial_plot=1, figsize=[20,10], category_values=[])
+    spatial_plot(plot_legend=True, min_cells_to_plot=10, decimate_for_spatial_plot=1, figsize=[20,10], category_values=[], dot_size=3)
         Plot the spatial data for the two datasets.
     de_novo_cluster(plot_stuff=False, correspondence_level="leiden_1",rerun_preprocessing=False)
         Perform de novo clustering on the two datasets.
     find_matched_groups(n_top_groups=100, n_shared_groups=30, min_n_cells=100, category_values=[], exclude_group_string="zzzzzzzzzzzzzzz", plot_stuff=False, figsize=[10,10])
         Find matched groups between the two datasets.
-    compare_expression(category_values=[], plot_stuff=False, min_mean_expression=.2, min_genes_to_compare=5, min_cells=10)
+    compare_expression(category_values=[], plot_stuff=False, min_mean_expression=.2, min_genes_to_compare=5, min_cells=10, ntop_genes=10)
         Compare gene expression between the two datasets.
+    
+    run_and_plot(category_values = d1d2_cells, min_mean_expression=.2, ntop_genes=5, filtred=True, dot_size=) 
+        Run all the plots, can select the genes to appear the label (ntop_genes), choose to filter 25 bottom, middle and top genes in the boxplot (filtred=True). Can choose the size of dots of spatial plot (dot_size=(3*18231)/(self.ad_0.n_obs)).    
 
     """
 
@@ -178,8 +181,9 @@ class SpatialCompare:
         decimate_for_spatial_plot=1,
         figsize=[20, 10],
         category_values=[],
+        dot_size=None,  # Add a parameter for dot size
     ):
-
+        
         plt.figure(figsize=figsize)
         all_category_values = set(self.ad_0.obs[self.category].unique()) | set(
             self.ad_1.obs[self.category].unique()
@@ -204,7 +208,7 @@ class SpatialCompare:
                 ],
                 ".",
                 label=label,
-                markersize=0.5,
+                markersize=dot_size,  # Use the dot_size parameter
             )
             plt.axis("equal")
             if plot_legend:
@@ -224,7 +228,7 @@ class SpatialCompare:
                 ],
                 ".",
                 label=label,
-                markersize=0.5,
+                markersize=dot_size,  # Use the dot_size parameter
             )
             plt.axis("equal")
             if plot_legend:
@@ -369,7 +373,7 @@ class SpatialCompare:
             "n0": in_top_N_0,
             "n1": in_top_N_1,
         }
-
+    
     def compare_expression(
         self,
         category_values=[],
@@ -377,89 +381,61 @@ class SpatialCompare:
         min_mean_expression=0.2,
         min_genes_to_compare=5,
         min_cells=10,
+        ntop_genes=10,
     ):
-        # group cells
+        # Group cells
         if len(category_values) == 0:
-            raise ValueError(
-                "please supply a list of values for the category " + self.category
-            )
+            raise ValueError("please supply a list of values for the category " + self.category)
 
         category_records = []
         gene_ratio_dfs = {}
+    
         for category_value in category_values:
             group_mask_0 = self.ad_0.obs[self.category] == category_value
             group_mask_1 = self.ad_1.obs[self.category] == category_value
 
             if np.sum(group_mask_0) < min_cells or np.sum(group_mask_1) < min_cells:
-                print(
-                    "at least 1 input has less than "
-                    + str(min_cells)
-                    + " cells in "
-                    + self.category
-                    + " == "
-                    + category_value
-                )
+                print("at least 1 input has less than " + str(min_cells) + " cells in " + self.category + " == " + category_value)
                 continue
 
-            means_0 = np.array(
-                np.mean(
-                    self.ad_0[
-                        group_mask_0, self.ad_0.var.index.isin(self.shared_genes)
-                    ].X,
-                    axis=0,
-                )
-            ).flatten()
-            means_1 = np.array(
-                np.mean(
-                    self.ad_1[
-                        group_mask_1, self.ad_1.var.index.isin(self.shared_genes)
-                    ].X,
-                    axis=0,
-                )
-            ).flatten()
+            means_0 = np.array(np.mean(self.ad_0[group_mask_0, self.ad_0.var.index.isin(self.shared_genes)].X, axis=0)).flatten()
+            means_1 = np.array(np.mean(self.ad_1[group_mask_1, self.ad_1.var.index.isin(self.shared_genes)].X, axis=0)).flatten()
+
+            # Filter genes above minimum mean expression
             means_0_gt_min = np.nonzero(means_0 > min_mean_expression)[0]
             means_1_gt_min = np.nonzero(means_1 > min_mean_expression)[0]
-            above_means0 = self.ad_0.var[
-                self.ad_0.var.index.isin(self.shared_genes)
-            ].iloc[means_0_gt_min]
-            above_means1 = self.ad_1.var[
-                self.ad_1.var.index.isin(self.shared_genes)
-            ].iloc[means_1_gt_min]
-            shared_above_mean = [
-                g for g in above_means1.index if g in above_means0.index
-            ]
+        
+            above_means0 = self.ad_0.var[self.ad_0.var.index.isin(self.shared_genes)].iloc[means_0_gt_min]
+            above_means1 = self.ad_1.var[self.ad_1.var.index.isin(self.shared_genes)].iloc[means_1_gt_min]
+        
+            shared_above_mean = [g for g in above_means1.index if g in above_means0.index]
+        
             if len(shared_above_mean) < min_genes_to_compare:
-                print(
-                    self.category
-                    + " "
-                    + category_value
-                    + " has less than "
-                    + str(min_genes_to_compare)
-                    + "\n shared genes above minimum mean = "
-                    + str(min_mean_expression)
-                )
+                print(self.category + " " + category_value + " has less than " + str(min_genes_to_compare) + "\n shared genes above minimum mean = " + str(min_mean_expression))
                 continue
 
-            means_0 = np.array(
-                np.mean(self.ad_0[group_mask_0, shared_above_mean].X, axis=0)
-            ).flatten()
-            means_1 = np.array(
-                np.mean(self.ad_1[group_mask_1, shared_above_mean].X, axis=0)
-            ).flatten()
+            # Calculate means again after filtering
+            means_0 = np.array(np.mean(self.ad_0[group_mask_0, shared_above_mean].X, axis=0)).flatten()
+            means_1 = np.array(np.mean(self.ad_1[group_mask_1, shared_above_mean].X, axis=0)).flatten()
+        
+            # Calculate average counts for selecting top genes
+            average_counts = (means_0 + means_1) / 2
+        
+            # Get indices of the top 20 genes based on average counts for this subclass
+            top_indices = np.argsort(average_counts)[-ntop_genes:]  # Get indices of top 10 genes
+
             shared_genes = shared_above_mean
+        
             p_coef = np.polynomial.Polynomial.fit(means_0, means_1, 1).convert().coef
-            category_records.append(
-                {
-                    self.category: category_value,
-                    "slope": p_coef[1],
-                    "mean_ratio": np.mean(means_1 / means_0),
-                    "correlation": np.corrcoef(means_0, means_1)[0][1],
-                    "n_cells_0": np.sum(group_mask_0),
-                    "n_cells_1": np.sum(group_mask_1),
-                    "total_count_ratio": np.sum(self.ad_1[group_mask_1, shared_genes].X)
-                    / np.sum(self.ad_0[group_mask_0, shared_genes].X),
-                }
-            )
+            category_records.append({
+                self.category: category_value,
+                "slope": p_coef[1],
+                "mean_ratio": np.mean(means_1 / means_0),
+                "correlation": np.corrcoef(means_0, means_1)[0][1],
+                "n_cells_0": np.sum(group_mask_0),
+                "n_cells_1": np.sum(group_mask_1),
+                "total_count_ratio": np.sum(self.ad_1[group_mask_1, shared_genes].X) / np.sum(self.ad_0[group_mask_0, shared_genes].X),
+            })
 
             gene_ratio_dfs[category_value] = pd.DataFrame(
                 means_1 / means_0,
@@ -470,63 +446,56 @@ class SpatialCompare:
             if plot_stuff:
                 plt.figure(figsize=[10, 10])
                 plt.title(
-                    self.category
-                    + ": "
-                    + category_value
-                    + "\nmean counts per cell\ncorrelation: "
-                    + str(category_records[-1]["correlation"])[:4]
-                    + " mean ratio: "
-                    + str(category_records[-1]["mean_ratio"])[:4]
+                    self.category + ": " + category_value +
+                    "\nmean counts per cell\ncorrelation: " +
+                    str(category_records[-1]["correlation"])[:4] +
+                    " mean ratio: " + str(category_records[-1]["mean_ratio"])[:4]
                 )
+            
                 low_expression = np.logical_and(means_0 < 1.0, means_1 < 1.0)
-                plt.loglog(
-                    means_0[low_expression],
-                    means_1[low_expression],
-                    ".",
-                    color=[0.5, 0.5, 0.5],
-                )
-                plt.loglog(
-                    means_0[np.logical_not(low_expression)],
-                    means_1[np.logical_not(low_expression)],
-                    ".",
-                )
+                plt.loglog(means_0[low_expression], means_1[low_expression], ".", color=[0.5, 0.5, 0.5])
+                plt.loglog(means_0[np.logical_not(low_expression)], means_1[np.logical_not(low_expression)], ".")
 
                 plt.xlabel(self.data_names[0] + ", N = " + str(np.sum(group_mask_0)))
                 plt.ylabel(self.data_names[1] + ", N = " + str(np.sum(group_mask_1)))
 
-                for g in shared_genes:
-                    if (
-                        means_0[np.nonzero(np.array(shared_genes) == g)] == 0
-                        or means_1[np.nonzero(np.array(shared_genes) == g)] == 0
-                    ) or low_expression[np.array(shared_genes) == g]:
+                # Add labels only for the top 20 genes based on average counts for this subclass
+                for idx in top_indices:
+                    g = shared_genes[idx] if idx < len(shared_genes) else None
+                
+                    if g is None or (means_0[idx] == 0 or means_1[idx] == 0 or low_expression[idx]):
                         continue
+                
                     plt.text(
-                        means_0[np.nonzero(np.array(shared_genes) == g)],
-                        means_1[np.nonzero(np.array(shared_genes) == g)],
+                        means_0[idx],
+                        means_1[idx],
                         g,
                         fontsize=10,
                     )
+                
                 plt.plot(
                     [np.min(means_0), np.max(means_0)],
                     [np.min(means_0), np.max(means_0)],
                     "--",
                 )
+
         print(gene_ratio_dfs.keys())
         if len(gene_ratio_dfs.keys()) > 0:
-
             gene_ratio_df = pd.concat(gene_ratio_dfs, axis=1)
         else:
             gene_ratio_df = None
+        
         return {
             "data_names": self.data_names,
             "category_results": pd.DataFrame.from_records(category_records),
             "gene_ratio_dataframe": gene_ratio_df,
         }
 
-    def plot_detection_ratio(self, gene_ratio_dataframe, figsize=[15, 15]):
+
+    def plot_detection_ratio(self, gene_ratio_dataframe, figsize=[15, 15], filtred=True):
 
         detection_ratio_plots(
-            gene_ratio_dataframe, data_names=self.data_names, figsize=figsize
+            gene_ratio_dataframe, data_names=self.data_names, figsize=figsize, filtred=filtred,
         )
 
     def spatial_compare(self, **kwargs):
@@ -565,12 +534,16 @@ class SpatialCompare:
     def run_and_plot(self, **kwargs):
         if "category" in kwargs.keys():
             self.set_category(kwargs["category"])
+        dot_size = kwargs.get('dot_size', (3*18231)/(self.ad_0.n_obs))
+        ntop_genes = kwargs.get('ntop_genes', 10)
+        filtred = kwargs.get('filtred', True)
 
-        self.spatial_plot()
+
+        self.spatial_plot(dot_size=dot_size)
         self.spatial_compare_results = self.spatial_compare(plot_stuff=True, **kwargs)
         self.plot_detection_ratio(
             self.spatial_compare_results["expression_results"]["gene_ratio_dataframe"],
-            figsize=[30, 20],
+            figsize=[30, 20], filtred=filtred,
         )
         return True
 
@@ -926,17 +899,29 @@ def filter_and_cluster_twice(
 
 
 def detection_ratio_plots(
-    gene_ratio_df, data_names=DEFAULT_DATA_NAMES, figsize=[15, 15]
+    gene_ratio_df, data_names=DEFAULT_DATA_NAMES, figsize=[15, 15], filtred=True,
 ):
 
     sorted_genes = [
         str(s) for s in gene_ratio_df.mean(axis=1).sort_values().index.values
     ]
+    # Select top 25, bottom 25 and middle 25
+    top_25 = sorted_genes[-25:]  # Top 25 highest
+    bottom_25 = sorted_genes[:25]  # Bottom 25 lowest
+    middle_index = len(sorted_genes) // 2
+    middle_25 = sorted_genes[middle_index - 12:middle_index + 13]  # Middle 25
+
+    # Combine selected ratios for plotting
+    selected_ratios = bottom_25 + middle_25 + top_25
+    if filtred:
+        genes_boxplot = selected_ratios
+    else:
+        genes_boxplot = sorted_genes
 
     plt.figure(figsize=figsize)
     plt.subplot(3, 1, 1)
     p = sns.boxplot(
-        gene_ratio_df.loc[sorted_genes, :].T,
+        gene_ratio_df.loc[genes_boxplot, :].T,
     )
     p.set_yscale("log")
     p.set_xlabel("gene", fontsize=20)
@@ -944,7 +929,11 @@ def detection_ratio_plots(
         "detection ratio\n" + data_names[1] + " / " + data_names[0], fontsize=20
     )
     ax = plt.gca()
-    ax.tick_params(axis="x", labelrotation=45, labelsize=10)
+    if filtred:
+        ax.tick_params(axis="x", labelrotation=45, labelsize=18)
+    else:
+        ax.tick_params(axis="x", labelrotation=45, labelsize=10)
+
     ax.tick_params(axis="y", labelsize=20, which="major")
     ax.tick_params(axis="y", labelsize=10, which="minor")
 
