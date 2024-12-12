@@ -258,7 +258,7 @@ def spatial_detection_scores(
         else:
             title_string = "Spatial Detection Scores"
         min_maxes = {
-            "detection z-score": [bin_image_z_score, [-1, 1]],
+            "detection z-score": [bin_image_z_score, [-2, 2]],
             "total counts difference": [bin_image_difference, [-100, 100]],
             "log10(detection ratio)": [bin_image_ratio, [-1, 1]],
         }
@@ -288,8 +288,8 @@ def spatial_detection_scores(
                     min_maxes[plot_name][0],
                     extent=extent,
                     cmap=cmap,
-                    # vmin=min_maxes[plot_name][1][0],
-                    # vmax=min_maxes[plot_name][1][1],
+                    vmin=min_maxes[plot_name][1][0],
+                    vmax=min_maxes[plot_name][1][1],
                 )
             else:
                 pcm = ax.scatter(
