@@ -17,8 +17,7 @@ To install `Spatial_Compare`:
 
 1. Clone the repo and cd into the project directory
     ```
-    git clone https://github.com/brianl/spatial_compare.git
-
+    git clone https://github.com/AllenInstitute/spatial_compare.git
     cd spatial_compare
     ```
 2. Install the required dependencies and install the project:
@@ -30,7 +29,7 @@ To install `Spatial_Compare`:
 Alternatively you can install directly from github:
 
 ```
-    pip install git+https://github.com/brianl/spatial_compare.git
+    pip install git+https://github.com/AllenInstitute/spatial_compare.git
 ```
 
 
